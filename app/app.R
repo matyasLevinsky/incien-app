@@ -138,6 +138,7 @@ if (!data_ok) {
     id = "main_nav",
     title = "Index odpadového hospodářství obcí",
     theme = paq_bs_theme(),
+    fillable = FALSE,  # natural content height; the page scrolls
 
     nav_panel(
       "Info",
@@ -154,18 +155,19 @@ if (!data_ok) {
 
     nav_panel(
       "Nastavení",
-      layout_columns(col_widths = c(6, 6), filter_card, clamp_card),
-      weights_card
-    ),
-
-    nav_panel(
-      "Přehled",
       layout_columns(
         fill = FALSE,
         value_box("Obcí ve výběru", textOutput("n_munis"), theme = "secondary"),
         value_box("Hodnocených (se skóre)", textOutput("n_scored"), theme = "primary"),
         value_box("Aktivních komponent", textOutput("n_comp"), theme = "light")
       ),
+      card(card_header("Výsledný vzorec"), card_body(uiOutput("formula"))),
+      layout_columns(col_widths = c(6, 6), filter_card, clamp_card),
+      weights_card
+    ),
+
+    nav_panel(
+      "Přehled",
       card(card_header("Náklady vs. kvalita"),
            card_body(plotOutput("scatter", height = "440px"))),
       card(card_header("Celkové pořadí"), DTOutput("full_tbl"))
@@ -254,6 +256,23 @@ server <- function(input, output, session) {
   output$n_munis  <- renderText(format(nrow(filtered()), big.mark = " "))
   output$n_scored <- renderText(format(nrow(scored()), big.mark = " "))
   output$n_comp   <- renderText(as.character(length(active_cols())))
+
+  # Live index formula reflecting the current weights.
+  output$formula <- renderUI({
+    w <- weights(); act <- active_cols()
+    if (length(act) == 0)
+      return(tags$em("Žádná aktivní komponenta — nastavte alespoň jednu váhu > 0."))
+    terms <- paste0(w[act], " · ", LABS[act])
+    tagList(
+      tags$p(tags$strong("Obecně: "), "Skóre = Σ(váha", tags$sub("i"),
+             " × orientovaný percentil", tags$sub("i"), ") / Σ(váha", tags$sub("i"), ")"),
+      tags$p(tags$strong("Aktuálně: "),
+             sprintf("Skóre = ( %s ) / %s", paste(terms, collapse = " + "), sum(w[act]))),
+      tags$small(class = "text-muted",
+        "Orientovaný percentil = percentilové pořadí 0–100 v rámci výběru; ",
+        "u ukazatelů „nižší = lepší“ obráceno (100 − percentil).")
+    )
+  })
 
   # ── Scatter ──
   # mode = "all"  → all points, both median lines, full (capped) cost range.
