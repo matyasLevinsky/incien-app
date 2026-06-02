@@ -51,13 +51,16 @@ if (data_ok) {
                 min = 0, max = 100, value = DEFAULTS[[col]], step = 5)
   }
   group_order <- unique(unname(GROUPS))
-  # Weights laid out as one column per group (Plnění cíle / Produkce / Separace).
-  weights_cols <- do.call(layout_columns, c(
-    list(col_widths = rep(floor(12 / length(group_order)), length(group_order))),
-    lapply(group_order, function(g) {
-      div(h6(g), lapply(COLS[GROUPS == g], slider_for))
-    })
-  ))
+  dir_hint <- tags$small(class = "text-muted",
+                         "↑ vyšší = lepší · ↓ nižší = lepší · váha 0 = vyřadit")
+  # One weight card per group; used in the 5-box Nastavení grid.
+  weights_card_for <- function(title, g) {
+    card(card_header(title),
+         card_body(dir_hint, lapply(COLS[GROUPS == g], slider_for)))
+  }
+  weights_plnenicile <- weights_card_for("Váhy: Plnění cíle třídění", "Plnění cíle")
+  weights_produkce   <- weights_card_for("Váhy: Produkce", "Produkce")
+  weights_separace   <- weights_card_for("Váhy: Separace", "Separace")
 
   filter_card <- card(
     card_header("Filtry výběru obcí"),
@@ -84,12 +87,6 @@ if (data_ok) {
       sliderInput("clamp_sep", "Separace – ořez obou konců (percentil)",
                   min = 0, max = 0.10, value = 0.01, step = 0.01)
     )
-  )
-
-  weights_card <- card(
-    card_header("Váhy komponent indexu"),
-    tags$small(class = "text-muted", "↑ vyšší = lepší · ↓ nižší = lepší · váha 0 = vyřadit"),
-    weights_cols
   )
 
   GOOD_LAB <- "Dobrá (nízké náklady, vysoká kvalita)"
@@ -162,8 +159,15 @@ if (!data_ok) {
         value_box("Aktivních komponent", textOutput("n_comp"), theme = "light")
       ),
       card(card_header("Výsledný vzorec"), card_body(uiOutput("formula"))),
-      layout_columns(col_widths = c(6, 6), filter_card, clamp_card),
-      weights_card
+      card(card_header("Příklad výpočtu"), card_body(uiOutput("example"))),
+      # 5-box grid: col1 = Filtr + Plnění cíle, col2 = Clamping + Produkce,
+      # col3 = Separace weights (tall, spans both rows).
+      layout_columns(
+        col_widths = c(4, 4, 4),
+        div(filter_card, weights_plnenicile),
+        div(clamp_card, weights_produkce),
+        weights_separace
+      )
     ),
 
     nav_panel(
@@ -271,6 +275,49 @@ server <- function(input, output, session) {
       tags$small(class = "text-muted",
         "Orientovaný percentil = percentilové pořadí 0–100 v rámci výběru; ",
         "u ukazatelů „nižší = lepší“ obráceno (100 − percentil).")
+    )
+  })
+
+  # Worked example for a representative (median-score, complete-data) municipality.
+  output$example <- renderUI({
+    s <- scored(); act <- active_cols()
+    if (nrow(s) == 0 || length(act) == 0)
+      return(tags$em("Nastavte alespoň jednu váhu > 0."))
+    d <- prepared()
+    # Oriented percentile per active component over the current cohort.
+    op <- lapply(act, function(col) orient(percentile_rank(d[[col]]), DIRS[[col]]))
+    names(op) <- act
+    # Prefer a municipality with all active components present; pick the one
+    # whose score is closest to the median.
+    pool <- s[stats::complete.cases(s[, act, drop = FALSE]), , drop = FALSE]
+    if (nrow(pool) == 0) pool <- s
+    m <- pool[order(abs(pool$score - median(pool$score)))[1], ]
+    mi <- which(d$kod_obec == m$kod_obec)[1]
+    w <- weights()
+    rows <- lapply(act, function(col) {
+      pct <- op[[col]][mi]; wt <- w[[col]]
+      contrib <- if (is.na(pct)) NA_real_ else wt * pct
+      tags$tr(
+        tags$td(LABS[[col]]),
+        tags$td(if (is.na(m[[col]])) "—" else paste(format(round(m[[col]], 1), big.mark = " "), UNITS[[col]])),
+        tags$td(if (is.na(pct)) "—" else round(pct, 1)),
+        tags$td(wt),
+        tags$td(if (is.na(contrib)) "0" else format(round(contrib, 1), big.mark = " "))
+      )
+    })
+    eff_w <- sum(vapply(act, function(col) if (is.na(op[[col]][mi])) 0 else w[[col]], 0))
+    csum  <- sum(vapply(act, function(col) { p <- op[[col]][mi]; if (is.na(p)) 0 else w[[col]] * p }, 0))
+    tagList(
+      tags$p(tags$strong(sprintf("Příklad: %s", m$obec)),
+             sprintf(" — typická obec (medián skóre výběru, %s obyv.)",
+                     format(round(m$population), big.mark = " "))),
+      tags$table(class = "table table-sm",
+        tags$thead(tags$tr(lapply(
+          c("Ukazatel", "Hodnota", "Orient. percentil", "Váha", "Příspěvek (váha×pct)"),
+          tags$th))),
+        tags$tbody(rows)),
+      tags$p(tags$strong(sprintf("Skóre = %s / %s = %s",
+             format(round(csum, 1), big.mark = " "), eff_w, round(m$score, 1))))
     )
   })
 

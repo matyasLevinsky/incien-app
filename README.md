@@ -36,9 +36,10 @@ Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 ## App layout (5 tabs)
 
 1. **Info** — project explanation + a button linking to Nastavení.
-2. **Nastavení** — top row: population/density **filters** and **clamping**;
-   below: the index **weight sliders** in three columns (Plnění cíle / Produkce /
-   Separace).
+2. **Nastavení** — value boxes + the live **formula** and a **worked example**
+   (a median-score municipality scored step by step), then a 5-box grid:
+   Filtr + Plnění-cíle weights (left), Clamping + Produkce weights (middle), and
+   a tall Separace weights box (right).
 3. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
    median lines splitting four quadrants) + the full sortable ranking.
 4. **Dobré obce** — the low-cost / high-quality quadrant (exemplars); the plot
