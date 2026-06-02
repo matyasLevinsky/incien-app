@@ -58,6 +58,21 @@ if (data_ok) {
     })
   )
 
+  # Outlier treatment (winsorization). Cost is clamped only from below (low
+  # cost ≈ bad data); production/separation are clamped at both extremes.
+  clamp_card <- card(
+    card_header("Ošetření odlehlých hodnot (clamping)"),
+    card_body(
+      sliderInput("clamp_cost", "Náklady/obyv. – ořez zdola (percentil)",
+                  min = 0, max = 0.20, value = 0, step = 0.01),
+      tags$small(class = "text-muted", textOutput("clamp_cost_czk", inline = TRUE)),
+      sliderInput("clamp_prod", "Produkce – ořez obou konců (percentil)",
+                  min = 0, max = 0.10, value = 0.01, step = 0.01),
+      sliderInput("clamp_sep", "Separace – ořez obou konců (percentil)",
+                  min = 0, max = 0.10, value = 0.01, step = 0.01)
+    )
+  )
+
   GOOD_LAB <- "Dobrá (nízké náklady, vysoká kvalita)"
   BAD_LAB  <- "Špatná (vysoké náklady, nízká kvalita)"
   OTHER_LAB<- "Ostatní"
@@ -122,10 +137,13 @@ if (!data_ok) {
       layout_columns(
         col_widths = c(7, 5),
         card(card_header("O projektu a indexu"), card_body(markdown(intro_md))),
-        card(card_header("Váhy komponent indexu"),
-             tags$small(class = "text-muted",
-                        "↑ vyšší = lepší · ↓ nižší = lepší · váha 0 = vyřadit"),
-             weight_accordion)
+        div(
+          clamp_card,
+          card(card_header("Váhy komponent indexu"),
+               tags$small(class = "text-muted",
+                          "↑ vyšší = lepší · ↓ nižší = lepší · váha 0 = vyřadit"),
+               weight_accordion)
+        )
       )
     ),
 
@@ -178,9 +196,30 @@ server <- function(input, output, session) {
     d
   })
 
+  # Apply user-set clamping to the filtered cohort before scoring/plotting.
+  prepared <- reactive({
+    d <- filtered()
+    if ((input$clamp_cost %||% 0) > 0) d[[COST]] <- clamp_lower(d[[COST]], input$clamp_cost)
+    pp <- input$clamp_prod %||% 0
+    if (pp > 0) for (col in COLS[GROUPS == "Produkce"]) d[[col]] <- clamp_winsor(d[[col]], pp)
+    ps <- input$clamp_sep %||% 0
+    if (ps > 0) for (col in COLS[GROUPS == "Separace"]) d[[col]] <- clamp_winsor(d[[col]], ps)
+    d
+  })
+
   scored <- reactive({
-    compute_index(filtered(), weights(), DIRS) %>%
+    compute_index(prepared(), weights(), DIRS) %>%
       filter(!is.na(score)) %>% arrange(desc(score)) %>% mutate(rank = row_number())
+  })
+
+  output$clamp_cost_czk <- renderText({
+    p <- input$clamp_cost %||% 0
+    if (p <= 0) return("Bez ořezu nákladů")
+    v <- filtered()[[COST]]
+    cut <- clamp_cutoff(v, p)
+    if (is.na(cut)) return("Bez dat")
+    sprintf("Hranice ≈ %s Kč/obyv. — %d obcí zvýšeno na tuto hodnotu",
+            format(round(cut), big.mark = " "), sum(!is.na(v) & v < cut))
   })
 
   # Municipalities with both a score and a cost → placed into quadrants.

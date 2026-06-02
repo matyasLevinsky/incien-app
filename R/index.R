@@ -19,6 +19,31 @@ percentile_rank <- function(x) {
   out
 }
 
+# Value at percentile p of x (lower-tail cutoff), NA-safe. Returns NA if no data.
+clamp_cutoff <- function(x, p) {
+  if (is.null(p) || p <= 0) return(NA_real_)
+  if (all(is.na(x))) return(NA_real_)
+  as.numeric(quantile(x, p, na.rm = TRUE, names = FALSE, type = 7))
+}
+
+# Lower-tail winsorization: values below the p-quantile are raised to it.
+# Used for cost — municipalities with implausibly low cost (bad data) are
+# pulled up to the cutoff. p <= 0 (or NULL) returns x unchanged.
+clamp_lower <- function(x, p) {
+  cut <- clamp_cutoff(x, p)
+  if (is.na(cut)) return(x)
+  ifelse(!is.na(x) & x < cut, cut, x)
+}
+
+# Two-sided winsorization: clamp to [p-quantile, (1-p)-quantile]. Used for the
+# production/separation groups, where bad data appears at both extremes.
+clamp_winsor <- function(x, p) {
+  if (is.null(p) || p <= 0 || all(is.na(x))) return(x)
+  lo <- quantile(x, p,     na.rm = TRUE, names = FALSE, type = 7)
+  hi <- quantile(x, 1 - p, na.rm = TRUE, names = FALSE, type = 7)
+  ifelse(is.na(x), x, pmin(pmax(x, lo), hi))
+}
+
 # Orient a percentile so that higher always means "better policy".
 #   direction == "lower"  → low raw value is good → invert.
 #   direction == "higher" → high raw value is good → keep.

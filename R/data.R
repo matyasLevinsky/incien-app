@@ -35,10 +35,6 @@ INDEX_COMPONENTS <- list(
   list(col = "plneni_cile",        label = "Plnění cíle třídění",  group = "Plnění cíle",
        direction = "higher", unit = "%",        default = 50),
 
-  # ── Separační podíl (derived headline quality metric) ──
-  list(col = "sep_share",          label = "Podíl separace (vytříděno / komunální odpad)",
-       group = "Plnění cíle", direction = "higher", unit = "%", default = 50),
-
   # ── Produkce odpadu (production, kg/obyv., less = better) ──
   list(col = "prod_komunalni", label = "Produkce: komunální odpad",     group = "Produkce",
        direction = "lower", unit = "kg/obyv.", default = 50),
@@ -49,7 +45,10 @@ INDEX_COMPONENTS <- list(
   list(col = "prod_stavebni",  label = "Produkce: stavební a demoliční", group = "Produkce",
        direction = "lower", unit = "kg/obyv.", default = 0),
 
-  # ── Separace (separated collection, kg/obyv., more = better) ──
+  # ── Separace (separated collection, more = better) ──
+  # Derived headline share first, then the per-capita category tonnages.
+  list(col = "sep_share",  label = "Podíl separace (vytříděno / komunální odpad)",
+       group = "Separace", direction = "higher", unit = "%", default = 50),
   list(col = "sep_ppsk",   label = "Separace: papír+plast+sklo+kov", group = "Separace",
        direction = "higher", unit = "kg/obyv.", default = 0),
   list(col = "sep_papir",  label = "Separace: papír",   group = "Separace",

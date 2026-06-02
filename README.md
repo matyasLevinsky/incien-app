@@ -68,6 +68,20 @@ Population/density filters live in a shared sidebar across all tabs.
   weight is currently > 0.
 - Population and density are **filters only**, never scored.
 
+## Clamping (outlier treatment)
+
+The **Nastavení** tab has winsorization controls (`R/index.R`):
+- **Náklady/obyv. – ořez zdola**: lower-tail percentile clamp for cost. Setting
+  it to e.g. 0.05 raises every municipality below the 5th-percentile cost up to
+  that cutoff (low/zero cost ≈ bad data). The cutoff is shown live in **CZK**.
+  Default 0 (off).
+- **Produkce / Separace – ořez obou konců**: two-sided percentile winsorization
+  applied to all components in each group (clamps both extremes — e.g. the
+  spurious 600 %+ separation shares). Default **0.01**.
+
+Clamping is applied to the filtered cohort before scoring (`prepared()` reactive),
+so it affects both the index and the cost-vs-quality scatter.
+
 **Data caveat:** cost is 2020-only while compliance/production/separation are the
 latest available (2023) and population is the latest year per municipality — so
 the index mixes years. Documented in the processed file's `$meta$note` and shown
