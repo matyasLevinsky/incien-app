@@ -278,6 +278,18 @@ server <- function(input, output, session) {
     if (col %in% names(beta)) "◎" else if (identical(DIRS[[col]], "lower")) "↓" else "↑"
   }
 
+  # Human-readable scoring type for the example table's "Typ" column.
+  type_label <- function(col, beta) {
+    if (col %in% names(beta)) {
+      sprintf("◎ optimum, cíl je: %s %s",
+              format(round(beta[[col]], 1), big.mark = " "), UNITS[[col]])
+    } else if (identical(DIRS[[col]], "lower")) {
+      "↓ lineární, nižší je lepší"
+    } else {
+      "↑ lineární, vyšší je lepší"
+    }
+  }
+
   # Grey out + disable a category's optimum controls when its weight is 0
   # (the optimum then has no effect on the index).
   lapply(SEP_CATEGORIES, function(cc) {
@@ -374,8 +386,8 @@ server <- function(input, output, session) {
       contrib <- if (is.na(pct)) NA_real_ else wt * pct
       tags$tr(
         tags$td(LABS[[col]]),
-        tags$td(paste0(marker(col, beta), " ",
-                       if (is.na(m[[col]])) "—" else paste(format(round(m[[col]], 1), big.mark = " "), UNITS[[col]]))),
+        tags$td(type_label(col, beta)),
+        tags$td(if (is.na(m[[col]])) "—" else paste(format(round(m[[col]], 1), big.mark = " "), UNITS[[col]])),
         tags$td(if (is.na(pct)) "—" else round(pct, 1)),
         tags$td(wt),
         tags$td(if (is.na(contrib)) "0" else format(round(contrib, 1), big.mark = " "))
@@ -391,14 +403,13 @@ server <- function(input, output, session) {
                      format(round(m[[COST]]), big.mark = " "))),
       tags$table(class = "table table-sm",
         tags$thead(tags$tr(lapply(
-          c("Ukazatel", "Hodnota", "Skóre komp. (0–100)", "Váha", "Příspěvek (váha×skóre)"),
+          c("Ukazatel", "Typ", "Hodnota", "Skóre komp. (0–100)", "Váha", "Příspěvek (váha×skóre)"),
           tags$th))),
         tags$tbody(rows)),
       tags$p(tags$strong(sprintf("Skóre = %s / %s = %s",
              format(round(csum, 1), big.mark = " "), eff_w, round(score, 1)))),
       tags$small(class = "text-muted",
-                 "Skóre komponent počítáno vůči všem obcím ČR (nezávisle na filtru). ",
-                 "◎ = hodnoceno dle optima (beta), ↑/↓ = lineární (vyšší/nižší = lepší).")
+                 "Skóre komponent počítáno vůči všem obcím ČR (nezávisle na filtru).")
     )
   })
 

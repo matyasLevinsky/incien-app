@@ -60,9 +60,9 @@ INDEX_COMPONENTS <- list(
   list(col = "sep_kov",    label = "Separace: kov",     group = "Separace",
        direction = "higher", unit = "kg/obyv.", default = 0),
   list(col = "sep_bio",    label = "Separace: biologický odpad", group = "Separace",
-       direction = "higher", unit = "kg/obyv.", default = 0),
+       direction = "higher", unit = "kg/obyv.", default = 50),
   list(col = "sep_textil", label = "Separace: textil",  group = "Separace",
-       direction = "higher", unit = "kg/obyv.", default = 0),
+       direction = "higher", unit = "kg/obyv.", default = 20),
   list(col = "sep_nebezp", label = "Separace: nebezpečný odpad", group = "Separace",
        direction = "higher", unit = "kg/obyv.", default = 0)
 )
@@ -78,8 +78,8 @@ COST_COMPONENT <- list(col = "naklady_per_capita", label = "Náklady na obyvatel
 SEP_CATEGORIES <- c("sep_ppsk", "sep_papir", "sep_plast", "sep_sklo",
                     "sep_kov", "sep_bio", "sep_textil", "sep_nebezp")
 SEP_OPTIMUM_DEFAULTS <- list(
-  sep_bio    = list(on = TRUE, opt = 30),
-  sep_textil = list(on = TRUE, opt = 5)
+  sep_bio    = list(on = TRUE, opt = 60),
+  sep_textil = list(on = TRUE, opt = 3)
 )
 sep_optimum_default <- function(col) {
   SEP_OPTIMUM_DEFAULTS[[col]] %||% list(on = FALSE, opt = 0)
