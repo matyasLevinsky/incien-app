@@ -20,11 +20,12 @@ suppressMessages({
 })
 
 # Resolve project root on either machine layout, then load shared defs.
+# The app is self-contained: helpers + processed data live under app/.
 .find <- function(...) { p <- here::here(...); if (file.exists(p)) return(p); here::here("incien-app", ...) }
-source(.find("R", "data.R"))
+source(.find("app", "R", "data.R"))
 
-raw_dir  <- .find("data", "raw")
-proc_dir <- .find("data", "processed")
+raw_dir  <- .find("data", "raw")                 # pipeline intermediate (root)
+proc_dir <- .find("app", "data", "processed")    # app input (bundled by shinylive)
 dir.create(proc_dir, showWarnings = FALSE, recursive = TRUE)
 
 read_raw <- function(id) {

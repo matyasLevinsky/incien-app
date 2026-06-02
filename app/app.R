@@ -12,15 +12,16 @@ options(encoding = "UTF-8")
 
 suppressMessages({
   library(shiny); library(bslib); library(DT)
-  library(ggplot2); library(dplyr); library(here); library(shinyjs)
+  library(ggplot2); library(dplyr); library(shinyjs)
 })
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-.find <- function(...) { p <- here::here(...); if (file.exists(p)) return(p); here::here("incien-app", ...) }
-source(.find("R", "data.R"))
-source(.find("R", "index.R"))
-source(.find("R", "theme.R"))
+# app/ is self-contained: helpers and data live under the app dir, referenced
+# relatively so it works both with runApp("app") and after shinylive::export().
+source("R/data.R")
+source("R/index.R")
+source("R/theme.R")
 
 bundle <- tryCatch(load_processed(), error = function(e) e)
 data_ok <- !inherits(bundle, "error")

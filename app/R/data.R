@@ -4,18 +4,6 @@
 # grouped in the UI, which direction is "good", and the default slider weight.
 # Sourced by pipeline/02_process.R and app/app.R.
 
-# ── Cross-machine path resolver ─────────────────────────────────────────────
-# The here-root differs between machines: on the extraction machine it is the
-# parent of `incien-app`, here it is `incien-app` itself. proj_path() returns
-# the first candidate that exists, so the same code works on both layouts.
-proj_path <- function(...) {
-  a <- here::here(...)
-  if (file.exists(a)) return(a)
-  b <- here::here("incien-app", ...)
-  if (file.exists(b)) return(b)
-  a  # default to the here-root candidate (for files about to be created)
-}
-
 # ── Index components ────────────────────────────────────────────────────────
 # Each entry:
 #   col       – column in the processed municipalities table
@@ -111,9 +99,10 @@ index_defaults   <- function() setNames(vapply(INDEX_COMPONENTS, function(x) as.
 index_units      <- function() setNames(vapply(INDEX_COMPONENTS, `[[`, "", "unit"), index_cols())
 
 # ── Loader ──────────────────────────────────────────────────────────────────
-# Reads the processed bundle written by pipeline/02_process.R.
-load_processed <- function(path = NULL) {
-  if (is.null(path)) path <- proj_path("data", "processed", "municipalities.rds")
+# Reads the processed bundle written by pipeline/02_process.R. The default path
+# is relative to the app directory (the working dir under runApp("app") and in
+# shinylive), so it works both locally and in the WebAssembly build.
+load_processed <- function(path = "data/processed/municipalities.rds") {
   if (!file.exists(path)) {
     stop("Processed data not found at '", path, "'.\n",
          "Run the pipeline first: pipeline/01_extract.R then pipeline/02_process.R.")
