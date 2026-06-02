@@ -12,7 +12,7 @@ options(encoding = "UTF-8")
 
 suppressMessages({
   library(shiny); library(bslib); library(DT)
-  library(ggplot2); library(dplyr); library(here)
+  library(ggplot2); library(dplyr); library(here); library(shinyjs)
 })
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -70,20 +70,22 @@ if (data_ok) {
     omax <- ceiling(as.numeric(quantile(DATA[[col]], 0.99, na.rm = TRUE)))
     if (!is.finite(omax) || omax <= 0) omax <- 1
     step <- signif(omax / 100, 1)
-    div(
+    div(id = paste0("optwrap_", col), class = "opt-cell",
       tags$strong(LABS[[col]]),
-      input_switch(paste0("opt_on_", col), "Hodnotit dle optima (beta)", value = d$on),
+      input_switch(paste0("opt_on_", col), "Optimum (beta)", value = d$on),
       sliderInput(paste0("opt_val_", col), sprintf("Optimum (%s)", UNITS[[col]]),
                   min = 0, max = omax, value = min(d$opt, omax), step = step)
     )
   }
+  # Optimum column — mirrors the Separace weights, one cell per category. Cells
+  # grey out (server-side) when the matching weight is 0, since they then do nothing.
   optimum_separace <- card(
     card_header("Optimum: Separace"),
-    tags$small(class = "text-muted",
-               "Zapnuto = beta (◎ optimum: příliš málo i příliš mnoho je horší); ",
-               "vypnuto = lineární (↑ vyšší = lepší)."),
-    do.call(layout_columns, c(list(col_widths = c(6, 6)),
-                              lapply(SEP_CATEGORIES, opt_cell)))
+    card_body(
+      tags$small(class = "text-muted",
+                 "◎ beta = příliš málo i příliš mnoho je horší. Šedé = váha 0 (neúčinkuje)."),
+      lapply(SEP_CATEGORIES, opt_cell)
+    )
   )
 
   filter_card <- card(
@@ -182,6 +184,8 @@ if (!data_ok) {
 
     nav_panel(
       "Nastavení",
+      useShinyjs(),
+      tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "style.css")),
       layout_columns(
         fill = FALSE,
         value_box("Obcí ve výběru", textOutput("n_munis"), theme = "secondary"),
@@ -194,15 +198,15 @@ if (!data_ok) {
              radioButtons("example_obec", "Modelová obec:",
                           choices = preset_choices, selected = preset_default, inline = TRUE),
              uiOutput("example"))),
-      # 5-box grid: col1 = Filtr + Plnění cíle, col2 = Clamping + Produkce,
-      # col3 = Separace weights (tall, spans both rows).
+      # 4 columns of sliders: Filtr+Plnění cíle | Clamping+Produkce |
+      # Separace váhy | Separace optimum (the optimum sits next to its weights).
       layout_columns(
-        col_widths = c(4, 4, 4),
+        col_widths = c(3, 3, 3, 3),
         div(filter_card, weights_plnenicile),
         div(clamp_card, weights_produkce),
-        weights_separace
-      ),
-      optimum_separace
+        weights_separace,
+        optimum_separace
+      )
     ),
 
     nav_panel(
@@ -273,6 +277,17 @@ server <- function(input, output, session) {
   marker <- function(col, beta) {
     if (col %in% names(beta)) "◎" else if (identical(DIRS[[col]], "lower")) "↓" else "↑"
   }
+
+  # Grey out + disable a category's optimum controls when its weight is 0
+  # (the optimum then has no effect on the index).
+  lapply(SEP_CATEGORIES, function(cc) {
+    observe({
+      active <- (input[[paste0("w_", cc)]] %||% 0) > 0
+      shinyjs::toggleState(paste0("opt_on_", cc), condition = active)
+      shinyjs::toggleState(paste0("opt_val_", cc), condition = active)
+      shinyjs::toggleClass(id = paste0("optwrap_", cc), class = "opt-disabled", condition = !active)
+    })
+  })
 
   scored <- reactive({
     compute_index(prepared(), weights(), DIRS, beta = beta_optima()) %>%

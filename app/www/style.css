@@ -9,6 +9,10 @@
   font-size: 0.85rem;
 }
 
+/* Optimum cell greyed when the matching weight is 0 (does nothing). */
+.opt-cell { margin-bottom: 0.5rem; }
+.opt-disabled { opacity: 0.4; }
+
 /* Keep the score tables compact. */
 table.dataTable td, table.dataTable th {
   padding: 4px 8px;

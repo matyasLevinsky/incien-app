@@ -41,7 +41,8 @@ Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
    Arnolec ~200, Chotutice ~500, Troubky ~2 000, Žďár nad Sázavou ~20 000,
    Hradec Králové ~93 000 — scored step by step over all obce), then a 5-box grid:
    Filtr + Plnění-cíle weights (left), Clamping + Produkce weights (middle), and
-   a tall Separace weights box (right).
+   a tall Separace weights box, and a 4th column with the matching **Optimum:
+   Separace** sliders (each optimum cell greys out when its weight is 0).
 3. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
    median lines splitting four quadrants) + the full sortable ranking.
 4. **Dobré obce** — the low-cost / high-quality quadrant (exemplars); the plot
