@@ -17,8 +17,8 @@ jobs:
           r-version: 'release'
           use-public-rspm: true
 
-      - name: Install shinylive
-        run: Rscript -e 'install.packages("shinylive")'
+      - name: Install shinylive and the app's R packages
+        run: Rscript -e 'install.packages(c("shinylive", "shiny", "bslib", "DT", "ggplot2", "dplyr", "shinyjs"))'
 
       - name: Export app
         run: Rscript -e 'shinylive::export("app/", "docs/")'
