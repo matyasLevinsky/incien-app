@@ -23,6 +23,20 @@ jobs:
       - name: Export app
         run: Rscript -e 'shinylive::export("app/", "docs/")'
 
+      - name: Inject one-time loading splash
+        run: |
+          python3 - <<'PY'
+          ins = open("ci/loading.html", encoding="utf-8").read()
+          p = "docs/index.html"
+          html = open(p, encoding="utf-8").read()
+          assert "</body>" in html, "no </body> in generated index.html"
+          html = html.replace("</body>", ins + "\n</body>", 1)
+          html = html.replace("<title>Shiny App</title>",
+                              "<title>Index odpadového hospodářství obcí</title>", 1)
+          open(p, "w", encoding="utf-8").write(html)
+          print("Injected loading splash into", p)
+          PY
+
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:

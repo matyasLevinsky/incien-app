@@ -1,0 +1,47 @@
+<!-- Injected into the Shinylive-generated docs/index.html by the deploy workflow.
+     Shows a one-time loading message during webR boot (which happens before the
+     Shiny app itself can render anything), then removes itself once the app's
+     navbar title appears in the DOM. Purely additive: if anything fails it just
+     hides after a safety timeout and never blocks the app. -->
+<style>
+  #incien-loading {
+    position: fixed; inset: 0; z-index: 99999;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #ffffff; color: #001056;
+    font-family: "Source Sans 3", system-ui, -apple-system, sans-serif;
+    text-align: center; padding: 1.5rem; transition: opacity .5s ease;
+  }
+  #incien-loading .spin {
+    width: 44px; height: 44px; margin-bottom: 1.1rem;
+    border: 4px solid #cfe2ff; border-top-color: #00cc74; border-radius: 50%;
+    animation: incien-spin 1s linear infinite;
+  }
+  @keyframes incien-spin { to { transform: rotate(360deg); } }
+  #incien-loading h1 { font-size: 1.15rem; margin: 0 0 .5rem; font-weight: 700; }
+  #incien-loading p { margin: .2rem 0; max-width: 32rem; color: #39404D; }
+  #incien-loading .hint { font-size: .85rem; color: #8a8a8a; }
+</style>
+<div id="incien-loading">
+  <div class="spin"></div>
+  <h1>Načítání aplikace…</h1>
+  <p>První spuštění trvá zhruba 20–30 sekund — do prohlížeče se stahuje běhové prostředí R.</p>
+  <p class="hint">Příště se aplikace načte téměř okamžitě (uloženo v mezipaměti prohlížeče).</p>
+</div>
+<script>
+  (function () {
+    var el = document.getElementById("incien-loading");
+    var start = Date.now();
+    function ready() {
+      return document.body && document.body.innerText &&
+             document.body.innerText.indexOf("odpadového hospodářství obcí") !== -1;
+    }
+    function hide() {
+      if (!el) return;
+      el.style.opacity = "0";
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 600);
+    }
+    var t = setInterval(function () {
+      if (ready() || Date.now() - start > 120000) { clearInterval(t); hide(); }
+    }, 400);
+  })();
+</script>
