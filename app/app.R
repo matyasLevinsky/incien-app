@@ -423,7 +423,7 @@ server <- function(input, output, session) {
   # mode = "all"  → all points, both median lines, full (capped) cost range.
   # mode = "good" → only the good quadrant, zoomed to its region.
   # mode = "bad"  → only the bad quadrant, zoomed to its region.
-  scatter_plot <- function(d, mode = "all") {
+  scatter_plot <- function(d, mode = "all", highlight = NULL) {
     if (nrow(d) == 0) return(ggplot() + theme_void())
     q_thr <- attr(d, "q_thr"); c_thr <- attr(d, "c_thr")
     cost <- d[[COST]]
@@ -447,33 +447,51 @@ server <- function(input, output, session) {
         coord_cartesian(xlim = c(c_thr, xhi), ylim = c(0, q_thr)) +
         base + theme_paq_app(12))
     }
-    ggplot(d, aes(.data[[COST]], score, colour = quadrant)) +
+    p <- ggplot(d, aes(.data[[COST]], score, colour = quadrant)) +
       geom_vline(xintercept = c_thr, linetype = "dashed", colour = PAQ$caption) +
       geom_hline(yintercept = q_thr, linetype = "dashed", colour = PAQ$caption) +
       geom_point(alpha = 0.5, size = 1) +
-      scale_colour_manual(values = QUAD_COLS, name = NULL) +
-      coord_cartesian(xlim = c(xlo, xhi), ylim = c(0, 100)) +
+      scale_colour_manual(values = QUAD_COLS, name = NULL)
+    # Highlight the clicked municipality with a labelled yellow ring.
+    if (!is.null(highlight)) {
+      hl <- d[d$kod_obec == highlight, ]
+      if (nrow(hl)) p <- p +
+        geom_point(data = hl, inherit.aes = FALSE, aes(.data[[COST]], score),
+                   shape = 21, size = 4, stroke = 1.4, colour = "black", fill = PAQ$yellow) +
+        geom_text(data = hl, inherit.aes = FALSE, aes(.data[[COST]], score, label = obec),
+                  vjust = -1.1, size = 3.6, fontface = "bold", colour = "black")
+    }
+    p + coord_cartesian(xlim = c(xlo, xhi), ylim = c(0, 100)) +
       base + theme_paq_app(12) + theme(legend.position = "top")
   }
-  output$scatter   <- renderPlot(scatter_plot(quad(), "all"))
+  output$scatter   <- renderPlot(scatter_plot(quad(), "all", highlight = selected_obec()))
   output$good_plot <- renderPlot(scatter_plot(quad(), "good"))
   output$bad_plot  <- renderPlot(scatter_plot(quad(), "bad"))
 
-  # Interactive readout: municipality nearest the cursor / last click.
-  # Pure base Shiny — uses only the event's data coords + axis domain (no extra
+  # Municipality nearest a plot event (data coords + axis domain only — no extra
   # packages, no pixel coordmap), so it survives WebAssembly compilation.
-  output$scatter_info <- renderUI({
-    ev <- input$scatter_hover %||% input$scatter_click
+  nearest_row <- function(ev) {
     if (is.null(ev) || is.null(ev$x) || is.null(ev$y)) return(NULL)
-    d <- quad()
-    d <- d[!is.na(d[[COST]]) & !is.na(d$score), ]
+    d <- quad(); d <- d[!is.na(d[[COST]]) & !is.na(d$score), ]
     if (nrow(d) == 0) return(NULL)
     xr <- (ev$domain$right - ev$domain$left); if (is.null(xr) || xr == 0) xr <- 1
     yr <- (ev$domain$top - ev$domain$bottom); if (is.null(yr) || yr == 0) yr <- 1
     dist <- sqrt(((d[[COST]] - ev$x) / xr)^2 + ((d$score - ev$y) / yr)^2)
     i <- which.min(dist)
     if (dist[i] > 0.05) return(NULL)  # only when actually near a point
-    h <- d[i, ]
+    d[i, ]
+  }
+
+  # Clicking pins a municipality → it stays highlighted on the scatter.
+  selected_obec <- reactiveVal(NULL)
+  observeEvent(input$scatter_click, {
+    r <- nearest_row(input$scatter_click)
+    selected_obec(if (is.null(r)) NULL else r$kod_obec)
+  })
+
+  output$scatter_info <- renderUI({
+    h <- nearest_row(input$scatter_hover %||% input$scatter_click)
+    if (is.null(h)) return(NULL)
     tags$div(class = "border rounded p-2 mt-2",
       tags$strong(h$obec),
       sprintf(" — skóre %s · %s %s · %s obyv. · %s obyv./km²",
