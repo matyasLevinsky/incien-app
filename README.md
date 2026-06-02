@@ -38,8 +38,10 @@ Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 1. **Nastavení & info** — project explanation + the index weight sliders.
 2. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
    median lines splitting four quadrants) + the full sortable ranking.
-3. **Dobré obce** — the low-cost / high-quality quadrant (exemplars).
-4. **Špatné obce** — the high-cost / low-quality quadrant (warning cases).
+3. **Dobré obce** — the low-cost / high-quality quadrant (exemplars); the plot
+   zooms to show only that quadrant.
+4. **Špatné obce** — the high-cost / low-quality quadrant (warning cases); plot
+   zooms to only that quadrant.
 
 Population/density filters live in a shared sidebar across all tabs.
 
@@ -71,10 +73,10 @@ Population/density filters live in a shared sidebar across all tabs.
 ## Clamping (outlier treatment)
 
 The **Nastavení** tab has winsorization controls (`R/index.R`):
-- **Náklady/obyv. – ořez zdola**: lower-tail percentile clamp for cost. Setting
-  it to e.g. 0.05 raises every municipality below the 5th-percentile cost up to
-  that cutoff (low/zero cost ≈ bad data). The cutoff is shown live in **CZK**.
-  Default 0 (off).
+- **Náklady/obyv. – ořez obou konců**: two-sided percentile winsorization for
+  cost (caps both the low/zero-cost bad data and the extreme high outliers).
+  Both cutoffs are shown live in **CZK**, with a count of municipalities clamped.
+  Default 0.01 (on) — this also keeps the cost-vs-quality scatter readable.
 - **Produkce / Separace – ořez obou konců**: two-sided percentile winsorization
   applied to all components in each group (clamps both extremes — e.g. the
   spurious 600 %+ separation shares). Default **0.01**.

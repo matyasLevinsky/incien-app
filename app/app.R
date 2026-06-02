@@ -63,8 +63,8 @@ if (data_ok) {
   clamp_card <- card(
     card_header("Ošetření odlehlých hodnot (clamping)"),
     card_body(
-      sliderInput("clamp_cost", "Náklady/obyv. – ořez zdola (percentil)",
-                  min = 0, max = 0.20, value = 0, step = 0.01),
+      sliderInput("clamp_cost", "Náklady/obyv. – ořez obou konců (percentil)",
+                  min = 0, max = 0.20, value = 0.01, step = 0.01),
       tags$small(class = "text-muted", textOutput("clamp_cost_czk", inline = TRUE)),
       sliderInput("clamp_prod", "Produkce – ořez obou konců (percentil)",
                   min = 0, max = 0.10, value = 0.01, step = 0.01),
@@ -199,7 +199,7 @@ server <- function(input, output, session) {
   # Apply user-set clamping to the filtered cohort before scoring/plotting.
   prepared <- reactive({
     d <- filtered()
-    if ((input$clamp_cost %||% 0) > 0) d[[COST]] <- clamp_lower(d[[COST]], input$clamp_cost)
+    if ((input$clamp_cost %||% 0) > 0) d[[COST]] <- clamp_winsor(d[[COST]], input$clamp_cost)
     pp <- input$clamp_prod %||% 0
     if (pp > 0) for (col in COLS[GROUPS == "Produkce"]) d[[col]] <- clamp_winsor(d[[col]], pp)
     ps <- input$clamp_sep %||% 0
@@ -216,10 +216,11 @@ server <- function(input, output, session) {
     p <- input$clamp_cost %||% 0
     if (p <= 0) return("Bez ořezu nákladů")
     v <- filtered()[[COST]]
-    cut <- clamp_cutoff(v, p)
-    if (is.na(cut)) return("Bez dat")
-    sprintf("Hranice ≈ %s Kč/obyv. — %d obcí zvýšeno na tuto hodnotu",
-            format(round(cut), big.mark = " "), sum(!is.na(v) & v < cut))
+    lo <- clamp_cutoff(v, p); hi <- clamp_cutoff(v, 1 - p)
+    if (is.na(lo)) return("Bez dat")
+    fmt <- function(x) format(round(x), big.mark = " ")
+    sprintf("Hranice: %s – %s Kč/obyv. — %d obcí ořezáno",
+            fmt(lo), fmt(hi), sum(!is.na(v) & (v < lo | v > hi)))
   })
 
   # Municipalities with both a score and a cost → placed into quadrants.
@@ -243,23 +244,44 @@ server <- function(input, output, session) {
   output$n_comp   <- renderText(as.character(length(active_cols())))
 
   # ── Scatter ──
-  scatter_plot <- function(d, emphasise = NULL) {
+  # mode = "all"  → all points, both median lines, full (capped) cost range.
+  # mode = "good" → only the good quadrant, zoomed to its region.
+  # mode = "bad"  → only the bad quadrant, zoomed to its region.
+  scatter_plot <- function(d, mode = "all") {
     if (nrow(d) == 0) return(ggplot() + theme_void())
     q_thr <- attr(d, "q_thr"); c_thr <- attr(d, "c_thr")
-    xmax <- as.numeric(quantile(d[[COST]], 0.98, na.rm = TRUE))
-    alpha <- if (is.null(emphasise)) 0.5 else ifelse(d$quadrant == emphasise, 0.85, 0.12)
+    cost <- d[[COST]]
+    xlo <- min(cost, na.rm = TRUE)
+    xhi <- as.numeric(quantile(cost, 0.99, na.rm = TRUE))  # caps the empty gap when uncapped
+    base <- labs(x = paste0(COST_LAB, " (", COST_UNIT, ")"), y = "Index kvality (0–100)")
+
+    if (mode == "good") {
+      d <- d[d$quadrant == GOOD_LAB, ]
+      if (nrow(d) == 0) return(ggplot() + theme_void())
+      return(ggplot(d, aes(.data[[COST]], score)) +
+        geom_point(colour = PAQ$green, alpha = 0.55, size = 1.3) +
+        coord_cartesian(xlim = c(xlo, c_thr), ylim = c(q_thr, 100)) +
+        base + theme_paq_app(12))
+    }
+    if (mode == "bad") {
+      d <- d[d$quadrant == BAD_LAB, ]
+      if (nrow(d) == 0) return(ggplot() + theme_void())
+      return(ggplot(d, aes(.data[[COST]], score)) +
+        geom_point(colour = PAQ$merlot, alpha = 0.55, size = 1.3) +
+        coord_cartesian(xlim = c(c_thr, xhi), ylim = c(0, q_thr)) +
+        base + theme_paq_app(12))
+    }
     ggplot(d, aes(.data[[COST]], score, colour = quadrant)) +
       geom_vline(xintercept = c_thr, linetype = "dashed", colour = PAQ$caption) +
       geom_hline(yintercept = q_thr, linetype = "dashed", colour = PAQ$caption) +
-      geom_point(aes(alpha = I(alpha)), size = 1) +
+      geom_point(alpha = 0.5, size = 1) +
       scale_colour_manual(values = QUAD_COLS, name = NULL) +
-      coord_cartesian(xlim = c(0, xmax), ylim = c(0, 100)) +
-      labs(x = paste0(COST_LAB, " (", COST_UNIT, ")"), y = "Index kvality (0–100)") +
-      theme_paq_app(12) + theme(legend.position = "top")
+      coord_cartesian(xlim = c(xlo, xhi), ylim = c(0, 100)) +
+      base + theme_paq_app(12) + theme(legend.position = "top")
   }
-  output$scatter <- renderPlot(scatter_plot(quad()))
-  output$good_plot <- renderPlot(scatter_plot(quad(), emphasise = GOOD_LAB))
-  output$bad_plot  <- renderPlot(scatter_plot(quad(), emphasise = BAD_LAB))
+  output$scatter   <- renderPlot(scatter_plot(quad(), "all"))
+  output$good_plot <- renderPlot(scatter_plot(quad(), "good"))
+  output$bad_plot  <- renderPlot(scatter_plot(quad(), "bad"))
 
   output$good_caption <- renderText({
     q <- quad(); n <- sum(q$quadrant == GOOD_LAB)
