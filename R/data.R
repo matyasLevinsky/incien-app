@@ -71,6 +71,17 @@ INDEX_COMPONENTS <- list(
 COST_COMPONENT <- list(col = "naklady_per_capita", label = "Náklady na obyvatele",
                        unit = "Kč/obyv.", direction = "lower")
 
+# Fixed model municipalities for the worked example, spanning the size tiers.
+# Real obce with complete data and typical values; identified by kód obce so
+# the example stays stable when the index weights change.
+PRESET_MUNICIPALITIES <- list(
+  list(kod_obec = "586854", name = "Arnolec",          tier = "~200 obyv."),
+  list(kod_obec = "533343", name = "Chotutice",        tier = "~500 obyv."),
+  list(kod_obec = "519651", name = "Troubky",          tier = "~2 000 obyv."),
+  list(kod_obec = "595209", name = "Žďár nad Sázavou", tier = "~20 000 obyv."),
+  list(kod_obec = "569810", name = "Hradec Králové",   tier = "~93 000 obyv.")
+)
+
 # Columns used only for filtering / display, never scored.
 FILTER_COMPONENTS <- list(
   list(col = "population", label = "Počet obyvatel", unit = "obyv."),

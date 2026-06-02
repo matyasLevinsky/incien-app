@@ -89,6 +89,12 @@ if (data_ok) {
     )
   )
 
+  preset_choices <- setNames(
+    vapply(PRESET_MUNICIPALITIES, `[[`, "", "kod_obec"),
+    vapply(PRESET_MUNICIPALITIES, function(p) sprintf("%s (%s)", p$name, p$tier), "")
+  )
+  preset_default <- "519651"  # Troubky (~2 000 obyv.)
+
   GOOD_LAB <- "Dobrá (nízké náklady, vysoká kvalita)"
   BAD_LAB  <- "Špatná (vysoké náklady, nízká kvalita)"
   OTHER_LAB<- "Ostatní"
@@ -159,7 +165,11 @@ if (!data_ok) {
         value_box("Aktivních komponent", textOutput("n_comp"), theme = "light")
       ),
       card(card_header("Výsledný vzorec"), card_body(uiOutput("formula"))),
-      card(card_header("Příklad výpočtu"), card_body(uiOutput("example"))),
+      card(card_header("Příklad výpočtu"),
+           card_body(
+             radioButtons("example_obec", "Modelová obec:",
+                          choices = preset_choices, selected = preset_default, inline = TRUE),
+             uiOutput("example"))),
       # 5-box grid: col1 = Filtr + Plnění cíle, col2 = Clamping + Produkce,
       # col3 = Separace weights (tall, spans both rows).
       layout_columns(
@@ -278,21 +288,30 @@ server <- function(input, output, session) {
     )
   })
 
-  # Worked example for a representative (median-score, complete-data) municipality.
+  # Clamping applied to ALL municipalities (no pop/density filter), so any fixed
+  # model obec is always present and its percentiles are stable.
+  prepared_full <- reactive({
+    d <- DATA
+    if ((input$clamp_cost %||% 0) > 0) d[[COST]] <- clamp_winsor(d[[COST]], input$clamp_cost)
+    pp <- input$clamp_prod %||% 0
+    if (pp > 0) for (col in COLS[GROUPS == "Produkce"]) d[[col]] <- clamp_winsor(d[[col]], pp)
+    ps <- input$clamp_sep %||% 0
+    if (ps > 0) for (col in COLS[GROUPS == "Separace"]) d[[col]] <- clamp_winsor(d[[col]], ps)
+    d
+  })
+
+  # Worked example for a fixed model municipality (chosen by the user).
   output$example <- renderUI({
-    s <- scored(); act <- active_cols()
-    if (nrow(s) == 0 || length(act) == 0)
-      return(tags$em("Nastavte alespoň jednu váhu > 0."))
-    d <- prepared()
-    # Oriented percentile per active component over the current cohort.
+    act <- active_cols()
+    if (length(act) == 0) return(tags$em("Nastavte alespoň jednu váhu > 0."))
+    d <- prepared_full()
+    # Oriented percentile per active component over all municipalities.
     op <- lapply(act, function(col) orient(percentile_rank(d[[col]]), DIRS[[col]]))
     names(op) <- act
-    # Prefer a municipality with all active components present; pick the one
-    # whose score is closest to the median.
-    pool <- s[stats::complete.cases(s[, act, drop = FALSE]), , drop = FALSE]
-    if (nrow(pool) == 0) pool <- s
-    m <- pool[order(abs(pool$score - median(pool$score)))[1], ]
-    mi <- which(d$kod_obec == m$kod_obec)[1]
+    sel <- input$example_obec %||% preset_default
+    mi <- which(d$kod_obec == sel)[1]
+    if (is.na(mi)) return(tags$em("Obec není v datech."))
+    m <- d[mi, ]
     w <- weights()
     rows <- lapply(act, function(col) {
       pct <- op[[col]][mi]; wt <- w[[col]]
@@ -307,17 +326,21 @@ server <- function(input, output, session) {
     })
     eff_w <- sum(vapply(act, function(col) if (is.na(op[[col]][mi])) 0 else w[[col]], 0))
     csum  <- sum(vapply(act, function(col) { p <- op[[col]][mi]; if (is.na(p)) 0 else w[[col]] * p }, 0))
+    score <- if (eff_w > 0) csum / eff_w else NA_real_
     tagList(
-      tags$p(tags$strong(sprintf("Příklad: %s", m$obec)),
-             sprintf(" — typická obec (medián skóre výběru, %s obyv.)",
-                     format(round(m$population), big.mark = " "))),
+      tags$p(tags$strong(sprintf("%s", m$obec)),
+             sprintf(" — %s obyv., %s Kč/obyv.",
+                     format(round(m$population), big.mark = " "),
+                     format(round(m[[COST]]), big.mark = " "))),
       tags$table(class = "table table-sm",
         tags$thead(tags$tr(lapply(
           c("Ukazatel", "Hodnota", "Orient. percentil", "Váha", "Příspěvek (váha×pct)"),
           tags$th))),
         tags$tbody(rows)),
       tags$p(tags$strong(sprintf("Skóre = %s / %s = %s",
-             format(round(csum, 1), big.mark = " "), eff_w, round(m$score, 1))))
+             format(round(csum, 1), big.mark = " "), eff_w, round(score, 1)))),
+      tags$small(class = "text-muted",
+                 "Percentily jsou počítány vůči všem obcím ČR (nezávisle na filtru).")
     )
   })
 

@@ -37,7 +37,9 @@ Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 
 1. **Info** — project explanation + a button linking to Nastavení.
 2. **Nastavení** — value boxes + the live **formula** and a **worked example**
-   (a median-score municipality scored step by step), then a 5-box grid:
+   (pick one of five fixed model municipalities spanning the size tiers —
+   Arnolec ~200, Chotutice ~500, Troubky ~2 000, Žďár nad Sázavou ~20 000,
+   Hradec Králové ~93 000 — scored step by step over all obce), then a 5-box grid:
    Filtr + Plnění-cíle weights (left), Clamping + Produkce weights (middle), and
    a tall Separace weights box (right).
 3. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
