@@ -33,17 +33,18 @@ Rscript pipeline/02_process.R       # build the app's data file
 Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 ```
 
-## App layout (4 tabs)
+## App layout (5 tabs)
 
-1. **Nastavení & info** — project explanation + the index weight sliders.
-2. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
+1. **Info** — project explanation + a button linking to Nastavení.
+2. **Nastavení** — top row: population/density **filters** and **clamping**;
+   below: the index **weight sliders** in three columns (Plnění cíle / Produkce /
+   Separace).
+3. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
    median lines splitting four quadrants) + the full sortable ranking.
-3. **Dobré obce** — the low-cost / high-quality quadrant (exemplars); the plot
+4. **Dobré obce** — the low-cost / high-quality quadrant (exemplars); the plot
    zooms to show only that quadrant.
-4. **Špatné obce** — the high-cost / low-quality quadrant (warning cases); plot
+5. **Špatné obce** — the high-cost / low-quality quadrant (warning cases); plot
    zooms to only that quadrant.
-
-Population/density filters live in a shared sidebar across all tabs.
 
 ## The index
 

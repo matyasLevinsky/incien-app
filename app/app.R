@@ -51,11 +51,24 @@ if (data_ok) {
                 min = 0, max = 100, value = DEFAULTS[[col]], step = 5)
   }
   group_order <- unique(unname(GROUPS))
-  weight_accordion <- accordion(
-    open = group_order,
+  # Weights laid out as one column per group (Plnění cíle / Produkce / Separace).
+  weights_cols <- do.call(layout_columns, c(
+    list(col_widths = rep(floor(12 / length(group_order)), length(group_order))),
     lapply(group_order, function(g) {
-      accordion_panel(g, lapply(COLS[GROUPS == g], slider_for))
+      div(h6(g), lapply(COLS[GROUPS == g], slider_for))
     })
+  ))
+
+  filter_card <- card(
+    card_header("Filtry výběru obcí"),
+    card_body(
+      sliderInput("f_pop", "Počet obyvatel",
+                  min = floor(pop_rng[1]), max = ceiling(pop_rng[2]),
+                  value = c(floor(pop_rng[1]), ceiling(pop_rng[2]))),
+      sliderInput("f_den", "Hustota (obyv./km²)",
+                  min = floor(den_rng[1]), max = ceiling(den_rng[2]),
+                  value = c(floor(den_rng[1]), ceiling(den_rng[2])))
+    )
   )
 
   # Outlier treatment (winsorization). Cost is clamped only from below (low
@@ -71,6 +84,12 @@ if (data_ok) {
       sliderInput("clamp_sep", "Separace – ořez obou konců (percentil)",
                   min = 0, max = 0.10, value = 0.01, step = 0.01)
     )
+  )
+
+  weights_card <- card(
+    card_header("Váhy komponent indexu"),
+    tags$small(class = "text-muted", "↑ vyšší = lepší · ↓ nižší = lepší · váha 0 = vyřadit"),
+    weights_cols
   )
 
   GOOD_LAB <- "Dobrá (nízké náklady, vysoká kvalita)"
@@ -92,8 +111,8 @@ hospodaří kvalitně i levně, od těch, kde vysoké náklady nevedou k dobrým
   produkce a separace odpadu podle druhů – vše přepočteno na obyvatele).
 - Každý ukazatel se převede na **percentilové pořadí (0–100)** v rámci aktuálního
   výběru obcí a otočí se tak, aby vyšší hodnota vždy znamenala lepší politiku.
-- Výsledné skóre je **vážený průměr** podle vah níže. Váha 0 ukazatel vyřadí.
-  Nastavením vah „testujete různé podoby indexu“.
+- Výsledné skóre je **vážený průměr** podle vah, které nastavíte v záložce
+  *Nastavení*. Váha 0 ukazatel vyřadí. Nastavením vah „testujete různé podoby indexu“.
 
 **Náklady jako druhý rozměr**
 
@@ -116,35 +135,27 @@ if (!data_ok) {
         p(tags$small(conditionMessage(bundle))))))
 } else {
   ui <- page_navbar(
+    id = "main_nav",
     title = "Index odpadového hospodářství obcí",
     theme = paq_bs_theme(),
-    sidebar = sidebar(
-      width = 300,
-      h6("Filtry výběru obcí"),
-      sliderInput("f_pop", "Počet obyvatel",
-                  min = floor(pop_rng[1]), max = ceiling(pop_rng[2]),
-                  value = c(floor(pop_rng[1]), ceiling(pop_rng[2]))),
-      sliderInput("f_den", "Hustota (obyv./km²)",
-                  min = floor(den_rng[1]), max = ceiling(den_rng[2]),
-                  value = c(floor(den_rng[1]), ceiling(den_rng[2]))),
-      hr(),
-      tags$small(class = "text-muted",
-                 textOutput("side_summary", inline = TRUE))
+
+    nav_panel(
+      "Info",
+      card(
+        card_header("O projektu a indexu"),
+        card_body(
+          markdown(intro_md),
+          hr(),
+          actionLink("go_nastaveni", "Pokračovat na Nastavení →",
+                     class = "btn btn-primary")
+        )
+      )
     ),
 
     nav_panel(
-      "Nastavení & info",
-      layout_columns(
-        col_widths = c(7, 5),
-        card(card_header("O projektu a indexu"), card_body(markdown(intro_md))),
-        div(
-          clamp_card,
-          card(card_header("Váhy komponent indexu"),
-               tags$small(class = "text-muted",
-                          "↑ vyšší = lepší · ↓ nižší = lepší · váha 0 = vyřadit"),
-               weight_accordion)
-        )
-      )
+      "Nastavení",
+      layout_columns(col_widths = c(6, 6), filter_card, clamp_card),
+      weights_card
     ),
 
     nav_panel(
@@ -185,6 +196,9 @@ if (!data_ok) {
 # ── Server ──────────────────────────────────────────────────────────────────
 server <- function(input, output, session) {
   if (!data_ok) return(invisible(NULL))
+
+  # "Pokračovat na Nastavení" link on the Info page jumps to the Nastavení tab.
+  observeEvent(input$go_nastaveni, nav_select("main_nav", "Nastavení"))
 
   weights     <- reactive(setNames(vapply(COLS, function(c) input[[paste0("w_", c)]] %||% 0, numeric(1)), COLS))
   active_cols <- reactive({ w <- weights(); names(w)[w > 0] })
@@ -237,8 +251,6 @@ server <- function(input, output, session) {
   })
 
   # ── Summaries ──
-  output$side_summary <- renderText(sprintf("Obcí: %s · hodnoceno: %s",
-    format(nrow(filtered()), big.mark = " "), format(nrow(scored()), big.mark = " ")))
   output$n_munis  <- renderText(format(nrow(filtered()), big.mark = " "))
   output$n_scored <- renderText(format(nrow(scored()), big.mark = " "))
   output$n_comp   <- renderText(as.character(length(active_cols())))
