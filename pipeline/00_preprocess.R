@@ -13,7 +13,7 @@ library(drukAPI)
 library(dplyr)
 library(here)
 
-meta_dir <- here::here("data", "meta")
+meta_dir <- here::here("incien-app", "data", "meta")
 dir.create(meta_dir, showWarnings = FALSE, recursive = TRUE)
 
 API_connect()

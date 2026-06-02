@@ -16,7 +16,7 @@ library(drukAPI)
 library(dplyr)
 library(here)
 
-raw_dir <- here::here("data", "raw")
+raw_dir <- here::here("incien-app", "data", "raw")
 dir.create(raw_dir, showWarnings = FALSE, recursive = TRUE)
 
 API_connect()
