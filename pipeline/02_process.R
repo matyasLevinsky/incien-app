@@ -1,88 +1,116 @@
 # pipeline/02_process.R
-# Stage 2 — turn the raw per-variable .rds files into one analysis-ready table,
-# one row per municipality. Needs NO credentials; runs against data/raw/.
+# Stage 2 — turn the raw per-variable druk pulls into one analysis-ready table,
+# one row per municipality, USING EVERY CATEGORY. Needs NO credentials.
 #
 # Usage: Rscript pipeline/02_process.R
-# Output: data/processed/municipalities.rds  (list: $data, $components)
+# Output: data/processed/municipalities.rds  (list: $data, $components, $meta)
+#
+# Tonnage categories (production ×4, separation ×8) are converted to kg per
+# capita so they are comparable across municipality size. A derived separation
+# share (separated / total municipal waste) is added as a headline quality
+# metric. NOTE: cost is 2020-only while production/separation/compliance are
+# latest available (2023); population uses the latest year per obec.
 
 options(encoding = "UTF-8")
 
-library(dplyr)
-library(here)
+suppressMessages({
+  library(dplyr)
+  library(tidyr)
+  library(here)
+})
 
-source(here::here("R", "data.R"))  # INDEX_COMPONENTS, FILTER_COMPONENTS
+# Resolve project root on either machine layout, then load shared defs.
+.find <- function(...) { p <- here::here(...); if (file.exists(p)) return(p); here::here("incien-app", ...) }
+source(.find("R", "data.R"))
 
-raw_dir <- here::here("data", "raw")
-proc_dir <- here::here("data", "processed")
+raw_dir  <- .find("data", "raw")
+proc_dir <- .find("data", "processed")
 dir.create(proc_dir, showWarnings = FALSE, recursive = TRUE)
 
-# raw_id → clean processed column name (covers index + filter inputs).
-COLMAP <- c(
-  setNames(vapply(INDEX_COMPONENTS,  `[[`, "", "col"),
-           vapply(INDEX_COMPONENTS,  `[[`, "", "raw_id")),
-  setNames(vapply(FILTER_COMPONENTS, `[[`, "", "col"),
-           vapply(FILTER_COMPONENTS, `[[`, "", "raw_id"))
+read_raw <- function(id) {
+  p <- file.path(raw_dir, paste0(id, ".rds"))
+  if (!file.exists(p)) { warning("Missing raw file: ", p, call. = FALSE); return(NULL) }
+  readRDS(p)
+}
+
+# Latest-year single value per obec (for non-categorical variables).
+one_val <- function(df, col) {
+  if (is.null(df)) return(NULL)
+  df %>%
+    mutate(val_ = suppressWarnings(as.numeric(hodnota)), date_ = as.Date(platnost_od),
+           kod_obec = as.character(id_objekt), obec = as.character(label_objekt)) %>%
+    filter(!is.na(val_), !is.na(date_)) %>%
+    group_by(kod_obec) %>% slice_max(date_, n = 1, with_ties = FALSE) %>% ungroup() %>%
+    transmute(kod_obec, obec, !!col := val_)
+}
+
+# Latest-year value per (obec, category), pivoted wide with a column prefix.
+cat_wide <- function(df, prefix, recode) {
+  if (is.null(df)) return(NULL)
+  df %>%
+    mutate(val_ = suppressWarnings(as.numeric(hodnota)), date_ = as.Date(platnost_od),
+           kod_obec = as.character(id_objekt), cat = recode[h_kat]) %>%
+    filter(!is.na(val_), !is.na(date_), !is.na(cat)) %>%
+    group_by(kod_obec, cat) %>% slice_max(date_, n = 1, with_ties = FALSE) %>% ungroup() %>%
+    select(kod_obec, cat, val_) %>%
+    pivot_wider(names_from = cat, names_prefix = prefix, values_from = val_)
+}
+
+# ── Load & shape each source ────────────────────────────────────────────────
+pop   <- one_val(read_raw("02_pocetObyvatel"), "population")               # kod_obec, obec, population
+area  <- one_val(read_raw("49_vymeraObce"), "area_ha")            %>% select(kod_obec, area_ha)
+nakl  <- one_val(read_raw("68_odpadyNaklady"), "naklady")         %>% select(kod_obec, naklady)
+naklp <- one_val(read_raw("68_odpadyNakladyPerCapita"), "naklady_per_capita") %>% select(kod_obec, naklady_per_capita)
+compl <- one_val(read_raw("68_odpadyPlneniCileTrideni"), "plneni_cile")  %>%
+  mutate(plneni_cile = plneni_cile * 100) %>% select(kod_obec, plneni_cile)  # fraction → %
+
+prod_recode <- c(komunalniOdpad = "komunalni", smesnyKomunalniOdpad = "smesny",
+                 objemnyOdpad = "objemny", stavebniOdpad = "stavebni")
+prod_t <- cat_wide(read_raw("68_odpadyProdukce"), "prodT_", prod_recode)   # tonnes
+
+sep_recode <- c(papirPlastSkloKov = "ppsk", papir = "papir", plast = "plast", sklo = "sklo",
+                kov = "kov", biologickyOdpad = "bio", textilniOdpad = "textil",
+                nebezpecnyOdpad = "nebezp")
+sep_t <- cat_wide(read_raw("68_odpadySeparace"), "sepT_", sep_recode)      # tonnes
+
+# ── Assemble ────────────────────────────────────────────────────────────────
+master <- pop
+for (df in list(area, nakl, naklp, compl, prod_t, sep_t)) {
+  if (!is.null(df)) master <- left_join(master, df, by = "kod_obec")
+}
+
+# kg per capita = tonnes * 1000 / population
+pc <- function(t) ifelse(!is.na(t) & !is.na(master$population) & master$population > 0,
+                         t * 1000 / master$population, NA_real_)
+
+master <- master %>% mutate(
+  density = ifelse(!is.na(area_ha) & area_ha > 0, population / (area_ha / 100), NA_real_),
+  # production per capita
+  prod_komunalni = pc(prodT_komunalni), prod_smesny = pc(prodT_smesny),
+  prod_objemny   = pc(prodT_objemny),   prod_stavebni = pc(prodT_stavebni),
+  # separation per capita
+  sep_ppsk  = pc(sepT_ppsk),  sep_papir = pc(sepT_papir), sep_plast = pc(sepT_plast),
+  sep_sklo  = pc(sepT_sklo),  sep_kov   = pc(sepT_kov),   sep_bio   = pc(sepT_bio),
+  sep_textil = pc(sepT_textil), sep_nebezp = pc(sepT_nebezp),
+  # derived separation share (%): separated municipal / total municipal waste
+  sep_share = ifelse(!is.na(sepT_ppsk) & !is.na(prodT_komunalni) & prodT_komunalni > 0,
+                     sepT_ppsk / prodT_komunalni * 100, NA_real_)
 )
 
-# Long druk table → latest-year snapshot, one row per obec.
-latest_snapshot <- function(df, value_col) {
-  df %>%
-    mutate(
-      .value = suppressWarnings(as.numeric(hodnota)),
-      .date  = as.Date(platnost_od)
-    ) %>%
-    filter(!is.na(.value), !is.na(.date)) %>%
-    group_by(kod_obec = as.character(id_objekt)) %>%
-    slice_max(.date, n = 1, with_ties = FALSE) %>%
-    ungroup() %>%
-    transmute(
-      kod_obec,
-      obec = as.character(label_objekt),
-      !!value_col := .value
-    )
-}
+# Keep identity + filters + scored columns (+ total cost for display); drop tonnage intermediates.
+keep <- c("kod_obec", "obec", "population", "area_ha", "density", "naklady", index_cols())
+master <- master %>% select(any_of(keep)) %>% arrange(obec)
 
-snapshots <- list()
-for (raw_id in names(COLMAP)) {
-  path <- file.path(raw_dir, paste0(raw_id, ".rds"))
-  if (!file.exists(path)) {
-    warning("Missing raw file (skipped): ", path, call. = FALSE)
-    next
-  }
-  message("── ", raw_id, " → ", COLMAP[[raw_id]])
-  snapshots[[raw_id]] <- latest_snapshot(readRDS(path), COLMAP[[raw_id]])
-}
-
-if (length(snapshots) == 0L) stop("No raw files found in ", raw_dir, ". Run 01_extract.R first.")
-
-# Full-join all snapshots on kod_obec; keep the first non-NA municipality name.
-master <- Reduce(function(a, b) {
-  full_join(a, b, by = c("kod_obec", "obec"))
-}, lapply(snapshots, function(s) s)) %>%
-  # full_join on (kod_obec, obec) can split rows where a name differs; collapse.
-  group_by(kod_obec) %>%
-  summarise(
-    obec = dplyr::first(na.omit(obec)),
-    across(where(is.numeric), ~ dplyr::first(na.omit(.x))),
-    .groups = "drop"
-  )
-
-# Density: inhabitants per km² (area is in hectares; 1 km² = 100 ha).
-if (all(c("population", "area_ha") %in% names(master))) {
-  master <- master %>%
-    mutate(density = ifelse(!is.na(area_ha) & area_ha > 0, population / (area_ha / 100), NA_real_))
-}
-
-# Ensure every declared index column exists (NA if its raw file was absent).
+# Ensure every declared index column exists.
 for (col in index_cols()) if (!col %in% names(master)) master[[col]] <- NA_real_
 
-master <- master %>% arrange(obec)
-
-saveRDS(
-  list(data = master, components = INDEX_COMPONENTS),
-  file.path(proc_dir, "municipalities.rds")
+meta <- list(
+  note = "Tonnage categories converted to kg/capita; sep_share derived. Cost=2020, other waste=latest(2023), population=latest.",
+  n = nrow(master)
 )
-
-message("\nProcessed ", nrow(master), " municipalities → ",
+saveRDS(list(data = master, components = INDEX_COMPONENTS, meta = meta),
         file.path(proc_dir, "municipalities.rds"))
-message("Columns: ", paste(names(master), collapse = ", "))
+
+message("Processed ", nrow(master), " municipalities → ",
+        file.path(proc_dir, "municipalities.rds"))
+message("Scored columns: ", paste(index_cols(), collapse = ", "))

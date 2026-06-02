@@ -35,18 +35,34 @@ Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 
 ## The index
 
-- **Components** (the 5 waste metrics) are defined once in `R/data.R`
-  (`INDEX_COMPONENTS`) — the single source of truth for column names, labels and
-  the "good" direction of each metric.
-- **Normalization:** each metric is converted to a **percentile rank (0–100)**
-  across the currently-filtered cohort, then oriented so higher always means
-  better policy (`R/index.R`).
-- **Score:** weighted mean of the oriented percentiles using the slider weights;
-  components with weight 0 or all-missing data drop out (`compute_index`).
+- **Components** are defined once in `R/data.R` (`INDEX_COMPONENTS`) — the single
+  source of truth for column names, UI labels, sidebar group, "good" direction
+  and default weight. There are 15 scored components grouped into four themes:
+  - **Náklady** — cost per capita
+  - **Plnění cíle** — statutory recycling-target compliance, plus a derived
+    separation share (separated ÷ total municipal waste)
+  - **Produkce** — waste production, 4 categories (municipal / mixed / bulky /
+    construction), as **kg per capita**
+  - **Separace** — separated collection, 8 categories (paper, plastic, glass,
+    metal, the paper+plastic+glass+metal combo, bio, textile, hazardous), kg/capita
+- **kg per capita:** the druk production/separation categories arrive in tonnes,
+  which scale with town size. `pipeline/02_process.R` divides by population so the
+  index measures policy, not size.
+- **Normalization:** each metric → **percentile rank (0–100)** across the
+  currently-filtered cohort, oriented so higher always means better policy
+  (`R/index.R`).
+- **Score:** weighted mean of the oriented percentiles; components with weight 0
+  or all-missing data drop out. The result tables show only the components whose
+  weight is currently > 0.
 - Population and density are **filters only**, never scored.
 
-To change which metrics are scored or their direction, edit `INDEX_COMPONENTS`
-in `R/data.R` (and the matching `EXTRACTS` in `pipeline/01_extract.R`).
+**Data caveat:** cost is 2020-only while compliance/production/separation are the
+latest available (2023) and population is the latest year per municipality — so
+the index mixes years. Documented in the processed file's `$meta$note` and shown
+as a footnote in the app.
+
+To change which metrics are scored, their direction or defaults, edit
+`INDEX_COMPONENTS` in `R/data.R`.
 
 ## Layout
 

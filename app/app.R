@@ -1,22 +1,28 @@
 # app/app.R
 # Incien waste-index explorer. Reads data/processed/municipalities.rds and lets
-# the user weight the index components, filter by population/density, and see
-# each municipality's score plus the top 10 and bottom 10.
+# the user weight the index components (grouped by waste theme), filter by
+# population/density, and see each municipality's score plus top 10 / bottom 10.
 #
 # Run: Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 
 options(encoding = "UTF-8")
 
-library(shiny)
-library(bslib)
-library(DT)
-library(ggplot2)
-library(dplyr)
-library(here)
+suppressMessages({
+  library(shiny)
+  library(bslib)
+  library(DT)
+  library(ggplot2)
+  library(dplyr)
+  library(here)
+})
 
-source(here::here("R", "data.R"))
-source(here::here("R", "index.R"))
-source(here::here("R", "theme.R"))
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+# Resolve project root on either machine layout, then load shared code.
+.find <- function(...) { p <- here::here(...); if (file.exists(p)) return(p); here::here("incien-app", ...) }
+source(.find("R", "data.R"))
+source(.find("R", "index.R"))
+source(.find("R", "theme.R"))
 
 # ── Load data once at startup ────────────────────────────────────────────────
 bundle <- tryCatch(load_processed(), error = function(e) e)
@@ -24,10 +30,13 @@ data_ok <- !inherits(bundle, "error")
 
 if (data_ok) {
   DATA  <- bundle$data
-  COMPS <- bundle$components
   DIRS  <- index_directions()
   LABS  <- index_labels()
   COLS  <- index_cols()
+  GROUPS <- index_groups()
+  DEFAULTS <- index_defaults()
+  UNITS <- index_units()
+  NOTE  <- bundle$meta$note %||% ""
 
   rng <- function(col) {
     if (!col %in% names(DATA)) return(c(0, 1))
@@ -36,12 +45,22 @@ if (data_ok) {
   }
   pop_rng <- rng("population")
   den_rng <- rng("density")
-}
 
-# Slider label with direction hint.
-slider_label <- function(col) {
-  arrow <- if (identical(DIRS[[col]], "lower")) "↓ nižší = lepší" else "↑ vyšší = lepší"
-  paste0(LABS[[col]], "  (", arrow, ")")
+  # One weight slider per component, labelled with direction.
+  slider_for <- function(col) {
+    arrow <- if (identical(DIRS[[col]], "lower")) "↓" else "↑"
+    sliderInput(paste0("w_", col), paste0(arrow, " ", LABS[[col]]),
+                min = 0, max = 100, value = DEFAULTS[[col]], step = 5)
+  }
+  # Accordion panels grouped by theme, preserving group order of appearance.
+  group_order <- unique(unname(GROUPS))
+  weight_accordion <- accordion(
+    open = group_order,
+    lapply(group_order, function(g) {
+      cols_g <- COLS[GROUPS == g]
+      accordion_panel(g, lapply(cols_g, slider_for))
+    })
+  )
 }
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -62,12 +81,10 @@ if (!data_ok) {
     title = "Index odpadového hospodářství obcí",
     theme = paq_bs_theme(),
     sidebar = sidebar(
-      width = 340,
+      width = 360,
       h6("Váhy komponent indexu"),
-      lapply(COLS, function(col) {
-        sliderInput(paste0("w_", col), slider_label(col),
-                    min = 0, max = 100, value = 50, step = 5)
-      }),
+      tags$small(class = "text-muted", "↑ vyšší = lepší · ↓ nižší = lepší. Váha 0 = vyřadit."),
+      weight_accordion,
       hr(),
       h6("Filtry"),
       sliderInput("f_pop", "Počet obyvatel",
@@ -80,7 +97,8 @@ if (!data_ok) {
     layout_columns(
       fill = FALSE,
       value_box("Obcí ve výběru", textOutput("n_munis"), theme = "secondary"),
-      value_box("Hodnocených (se skóre)", textOutput("n_scored"), theme = "primary")
+      value_box("Hodnocených (se skóre)", textOutput("n_scored"), theme = "primary"),
+      value_box("Aktivních komponent", textOutput("n_comp"), theme = "light")
     ),
     layout_columns(
       col_widths = c(6, 6),
@@ -94,7 +112,8 @@ if (!data_ok) {
     card(
       card_header("Celkové pořadí"),
       DTOutput("full_tbl")
-    )
+    ),
+    tags$small(class = "text-muted", NOTE)
   )
 }
 
@@ -104,6 +123,9 @@ server <- function(input, output, session) {
 
   weights <- reactive({
     setNames(vapply(COLS, function(col) input[[paste0("w_", col)]] %||% 0, numeric(1)), COLS)
+  })
+  active_cols <- reactive({
+    w <- weights(); names(w)[w > 0]
   })
 
   filtered <- reactive({
@@ -126,20 +148,28 @@ server <- function(input, output, session) {
 
   output$n_munis  <- renderText(format(nrow(filtered()), big.mark = " "))
   output$n_scored <- renderText(format(nrow(scored()), big.mark = " "))
+  output$n_comp   <- renderText(as.character(length(active_cols())))
 
-  # Display columns: rank, obec, score + raw component values present.
+  # Display: identity + filters + only the components with positive weight.
   display_cols <- function(df) {
-    keep <- c("rank", "obec", "score", intersect(COLS, names(df)))
-    out <- df[, keep, drop = FALSE]
-    out$score <- round(out$score, 1)
-    for (c in intersect(COLS, names(out))) out[[c]] <- round(out[[c]], 1)
-    names(out) <- c("Pořadí", "Obec", "Skóre", unname(LABS[intersect(COLS, names(df))]))
+    act <- active_cols()
+    base <- c("rank", "obec", "score", "population", "density")
+    keep <- c(base, act)
+    out <- df[, intersect(keep, names(df)), drop = FALSE]
+    num <- setdiff(names(out), c("rank", "obec"))
+    out[num] <- lapply(out[num], function(x) round(x, 1))
+    nm <- names(out)
+    nm[nm == "rank"] <- "Pořadí"; nm[nm == "obec"] <- "Obec"
+    nm[nm == "score"] <- "Skóre"; nm[nm == "population"] <- "Obyvatel"
+    nm[nm == "density"] <- "Hustota"
+    for (c in act) nm[nm == c] <- paste0(LABS[[c]], " (", UNITS[[c]], ")")
+    names(out) <- nm
     out
   }
 
-  rank_table <- function(df) {
+  rank_table <- function(df, pageLength = 10) {
     datatable(display_cols(df), rownames = FALSE,
-              options = list(pageLength = 10, dom = "tip", scrollX = TRUE),
+              options = list(pageLength = pageLength, dom = "tip", scrollX = TRUE),
               selection = "none")
   }
 
@@ -150,26 +180,19 @@ server <- function(input, output, session) {
       geom_col(fill = fill, width = 0.7) +
       geom_text(aes(label = round(score, 1)), hjust = -0.15, size = 3.2, colour = PAQ$caption) +
       scale_x_continuous(limits = c(0, 105), expand = c(0, 0)) +
-      labs(title = NULL) +
       theme_paq_app(11)
   }
 
   top10 <- reactive(head(scored(), 10))
   bot10 <- reactive({
-    s <- scored()
-    tail(s, min(10, nrow(s))) %>% arrange(desc(score))
+    s <- scored(); tail(s, min(10, nrow(s))) %>% arrange(desc(score))
   })
 
   output$top_tbl  <- renderDT(rank_table(top10()))
   output$bot_tbl  <- renderDT(rank_table(bot10()))
-  output$full_tbl <- renderDT(
-    datatable(display_cols(scored()), rownames = FALSE,
-              options = list(pageLength = 25, scrollX = TRUE), selection = "none")
-  )
+  output$full_tbl <- renderDT(rank_table(scored(), pageLength = 25))
   output$top_plot <- renderPlot(score_bars(top10(), PAQ$green))
   output$bot_plot <- renderPlot(score_bars(bot10(), PAQ$merlot))
 }
-
-`%||%` <- function(a, b) if (is.null(a)) b else a
 
 shinyApp(ui, server)
