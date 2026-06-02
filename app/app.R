@@ -62,6 +62,30 @@ if (data_ok) {
   weights_produkce   <- weights_card_for("Váhy: Produkce", "Produkce")
   weights_separace   <- weights_card_for("Váhy: Separace", "Separace")
 
+  # "Optimum: Separace" — per category a toggle (linear ↔ beta) + the optimum
+  # value slider. Beta scores closeness to the optimum (sweet spot) instead of
+  # rewarding ever-higher separated amounts. Mirrors the Váhy: Separace card.
+  opt_cell <- function(col) {
+    d <- sep_optimum_default(col)
+    omax <- ceiling(as.numeric(quantile(DATA[[col]], 0.99, na.rm = TRUE)))
+    if (!is.finite(omax) || omax <= 0) omax <- 1
+    step <- signif(omax / 100, 1)
+    div(
+      tags$strong(LABS[[col]]),
+      input_switch(paste0("opt_on_", col), "Hodnotit dle optima (beta)", value = d$on),
+      sliderInput(paste0("opt_val_", col), sprintf("Optimum (%s)", UNITS[[col]]),
+                  min = 0, max = omax, value = min(d$opt, omax), step = step)
+    )
+  }
+  optimum_separace <- card(
+    card_header("Optimum: Separace"),
+    tags$small(class = "text-muted",
+               "Zapnuto = beta (◎ optimum: příliš málo i příliš mnoho je horší); ",
+               "vypnuto = lineární (↑ vyšší = lepší)."),
+    do.call(layout_columns, c(list(col_widths = c(6, 6)),
+                              lapply(SEP_CATEGORIES, opt_cell)))
+  )
+
   filter_card <- card(
     card_header("Filtry výběru obcí"),
     card_body(
@@ -177,7 +201,8 @@ if (!data_ok) {
         div(filter_card, weights_plnenicile),
         div(clamp_card, weights_produkce),
         weights_separace
-      )
+      ),
+      optimum_separace
     ),
 
     nav_panel(
@@ -237,8 +262,20 @@ server <- function(input, output, session) {
     d
   })
 
+  # Separation categories switched to beta scoring → named numeric (col → optimum).
+  beta_optima <- reactive({
+    on <- SEP_CATEGORIES[vapply(SEP_CATEGORIES,
+            function(c) isTRUE(input[[paste0("opt_on_", c)]]), logical(1))]
+    setNames(vapply(on, function(c) input[[paste0("opt_val_", c)]] %||% 0, numeric(1)), on)
+  })
+
+  # Direction marker for a component: ◎ if beta-scored, else ↑/↓ by direction.
+  marker <- function(col, beta) {
+    if (col %in% names(beta)) "◎" else if (identical(DIRS[[col]], "lower")) "↓" else "↑"
+  }
+
   scored <- reactive({
-    compute_index(prepared(), weights(), DIRS) %>%
+    compute_index(prepared(), weights(), DIRS, beta = beta_optima()) %>%
       filter(!is.na(score)) %>% arrange(desc(score)) %>% mutate(rank = row_number())
   })
 
@@ -305,8 +342,12 @@ server <- function(input, output, session) {
     act <- active_cols()
     if (length(act) == 0) return(tags$em("Nastavte alespoň jednu váhu > 0."))
     d <- prepared_full()
-    # Oriented percentile per active component over all municipalities.
-    op <- lapply(act, function(col) orient(percentile_rank(d[[col]]), DIRS[[col]]))
+    beta <- beta_optima()
+    # Per-component score (linear percentile or beta-optimum) over all obce.
+    op <- lapply(act, function(col) {
+      opt <- if (col %in% names(beta)) beta[[col]] else NULL
+      score_component(d[[col]], DIRS[[col]], opt = opt)
+    })
     names(op) <- act
     sel <- input$example_obec %||% preset_default
     mi <- which(d$kod_obec == sel)[1]
@@ -318,7 +359,8 @@ server <- function(input, output, session) {
       contrib <- if (is.na(pct)) NA_real_ else wt * pct
       tags$tr(
         tags$td(LABS[[col]]),
-        tags$td(if (is.na(m[[col]])) "—" else paste(format(round(m[[col]], 1), big.mark = " "), UNITS[[col]])),
+        tags$td(paste0(marker(col, beta), " ",
+                       if (is.na(m[[col]])) "—" else paste(format(round(m[[col]], 1), big.mark = " "), UNITS[[col]]))),
         tags$td(if (is.na(pct)) "—" else round(pct, 1)),
         tags$td(wt),
         tags$td(if (is.na(contrib)) "0" else format(round(contrib, 1), big.mark = " "))
@@ -334,13 +376,14 @@ server <- function(input, output, session) {
                      format(round(m[[COST]]), big.mark = " "))),
       tags$table(class = "table table-sm",
         tags$thead(tags$tr(lapply(
-          c("Ukazatel", "Hodnota", "Orient. percentil", "Váha", "Příspěvek (váha×pct)"),
+          c("Ukazatel", "Hodnota", "Skóre komp. (0–100)", "Váha", "Příspěvek (váha×skóre)"),
           tags$th))),
         tags$tbody(rows)),
       tags$p(tags$strong(sprintf("Skóre = %s / %s = %s",
              format(round(csum, 1), big.mark = " "), eff_w, round(score, 1)))),
       tags$small(class = "text-muted",
-                 "Percentily jsou počítány vůči všem obcím ČR (nezávisle na filtru).")
+                 "Skóre komponent počítáno vůči všem obcím ČR (nezávisle na filtru). ",
+                 "◎ = hodnoceno dle optima (beta), ↑/↓ = lineární (vyšší/nižší = lepší).")
     )
   })
 
@@ -408,8 +451,10 @@ server <- function(input, output, session) {
   cost_map <- setNames(paste0(COST_LAB, " (", COST_UNIT, ")"), COST)
 
   output$full_tbl <- renderDT({
-    act <- active_cols()
-    comp_map <- setNames(paste0(LABS[act], " (", UNITS[act], ")"), act)
+    act <- active_cols(); beta <- beta_optima()
+    comp_map <- setNames(
+      vapply(act, function(c) paste0(marker(c, beta), " ", LABS[[c]], " (", UNITS[[c]], ")"), ""),
+      act)
     base_tbl(scored(),
              cols = c("rank", "obec", "score", COST, "population", "density", act),
              names_map = c(common_map, cost_map, comp_map), pageLength = 25)

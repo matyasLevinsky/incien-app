@@ -74,6 +74,23 @@ Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
   weight is currently > 0.
 - Population and density are **filters only**, never scored.
 
+### Optimum (beta) scoring for separation
+
+The 8 per-capita separation categories can be scored two ways, toggled per category
+on the **Optimum: Separace** card:
+- **Lineární** (↑ higher = better) — the default percentile rank, for streams where
+  more separation is simply better (paper, plastic, glass, metal…).
+- **Optimum (beta)** (◎) — score peaks (100) at a set **optimum** value and falls to 0
+  at the capped extremes, following a fixed-shape Beta curve (`beta_score` in
+  `R/index.R`). This captures sweet-spot streams: e.g. **bio** waste composted at source
+  means *less* collected separated bio is fine, so both too little and too much are
+  penalised. Defaults: beta **on for bio (optimum 30 kg/obyv.) and textile (5 kg/obyv.)**,
+  linear for the rest; `sep_share` always stays linear. The beta's 0/1 endpoints map to
+  the capped value range (the Separace clamp cutoffs).
+
+Value displays carry a marker showing the desired direction: `↑`/`↓` for linear
+components, `◎` for optimum-scored ones.
+
 ## Clamping (outlier treatment)
 
 The **Nastavení** tab has winsorization controls (`R/index.R`):

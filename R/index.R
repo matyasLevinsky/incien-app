@@ -51,6 +51,39 @@ orient <- function(p, direction) {
   if (identical(direction, "lower")) 100 - p else p
 }
 
+# Fixed concentration (alpha+beta) of the optimum beta curve. Higher = sharper.
+BETA_CONC <- 8
+
+# "Closeness to optimum" score on 0–100, shaped by a Beta distribution.
+#   x        – metric values.
+#   opt      – the optimum (best) value; scores peak here.
+#   lo, hi   – the value range that maps to the beta's [0,1] support (the capped
+#              extremes). Scores fall to ~0 at lo and hi.
+#   conc     – beta concentration (alpha+beta).
+# Returns NA for NA x (and all-NA if the range is degenerate).
+beta_score <- function(x, opt, lo, hi, conc = BETA_CONC) {
+  out <- rep(NA_real_, length(x))
+  if (is.na(lo) || is.na(hi) || hi <= lo) return(out)
+  u  <- pmin(pmax((x - lo) / (hi - lo), 0), 1)
+  uo <- min(max((opt - lo) / (hi - lo), 1e-3), 1 - 1e-3)
+  a  <- uo * (conc - 2) + 1
+  b  <- conc - a
+  peak <- dbeta(uo, a, b)
+  ok <- !is.na(x)
+  out[ok] <- dbeta(u[ok], a, b) / peak * 100
+  out
+}
+
+# Single source of per-component scoring on 0–100.
+#   opt = NULL/NA  → linear: oriented percentile rank (higher = better policy).
+#   opt is a value → beta: closeness to that optimum over range(x).
+score_component <- function(x, direction, opt = NULL, conc = BETA_CONC) {
+  if (is.null(opt) || is.na(opt)) return(orient(percentile_rank(x), direction))
+  rng <- suppressWarnings(range(x, na.rm = TRUE))
+  if (!all(is.finite(rng))) return(rep(NA_real_, length(x)))
+  beta_score(x, opt, rng[1], rng[2], conc)
+}
+
 # Compute the composite waste index for a data frame of municipalities.
 #
 #   df          – municipalities table (one row each); must contain the columns
@@ -59,14 +92,17 @@ orient <- function(p, direction) {
 #                 Components with weight 0 (or NA) are excluded entirely.
 #   directions  – named character vector: component column → "lower"/"higher".
 #                 Defaults to index_directions() from R/data.R if available.
+#   beta        – optional named numeric (column → optimum value). Components
+#                 listed here are scored by closeness-to-optimum (beta) instead
+#                 of the linear oriented percentile.
 #
 # Returns df with two added columns:
-#   score    – weighted mean of oriented percentiles, 0–100 (NA if a row has no
+#   score    – weighted mean of per-component scores, 0–100 (NA if a row has no
 #              scorable component among those with positive weight).
 #   n_used   – how many components actually contributed to that row's score.
 #
-# Percentiles are computed over the ROWS PASSED IN, i.e. the current cohort.
-compute_index <- function(df, weights, directions = NULL) {
+# Scores are computed over the ROWS PASSED IN, i.e. the current cohort.
+compute_index <- function(df, weights, directions = NULL, beta = NULL) {
   if (is.null(directions)) directions <- index_directions()
 
   weights <- weights[!is.na(weights) & weights > 0]
@@ -78,9 +114,10 @@ compute_index <- function(df, weights, directions = NULL) {
     return(df)
   }
 
-  # Oriented percentile matrix: one column per active component.
+  # Per-component score matrix (linear percentile or beta-optimum per column).
   oriented <- vapply(comps, function(col) {
-    orient(percentile_rank(df[[col]]), directions[[col]])
+    opt <- if (col %in% names(beta)) beta[[col]] else NULL
+    score_component(df[[col]], directions[[col]], opt = opt)
   }, numeric(nrow(df)))
   oriented <- matrix(oriented, nrow = nrow(df), dimnames = list(NULL, comps))
 

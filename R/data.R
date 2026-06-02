@@ -71,6 +71,20 @@ INDEX_COMPONENTS <- list(
 COST_COMPONENT <- list(col = "naklady_per_capita", label = "Náklady na obyvatele",
                        unit = "Kč/obyv.", direction = "lower")
 
+# Per-capita separation categories that can switch from linear (higher = better)
+# to beta "closeness-to-optimum" scoring (everything in group "Separace" except
+# the derived share). Defaults: beta ON for bio (30 kg/obyv.) and textile (5),
+# OFF (linear) for the rest.
+SEP_CATEGORIES <- c("sep_ppsk", "sep_papir", "sep_plast", "sep_sklo",
+                    "sep_kov", "sep_bio", "sep_textil", "sep_nebezp")
+SEP_OPTIMUM_DEFAULTS <- list(
+  sep_bio    = list(on = TRUE, opt = 30),
+  sep_textil = list(on = TRUE, opt = 5)
+)
+sep_optimum_default <- function(col) {
+  SEP_OPTIMUM_DEFAULTS[[col]] %||% list(on = FALSE, opt = 0)
+}
+
 # Fixed model municipalities for the worked example, spanning the size tiers.
 # Real obce with complete data and typical values; identified by kód obce so
 # the example stays stable when the index weights change.
