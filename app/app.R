@@ -212,7 +212,13 @@ if (!data_ok) {
     nav_panel(
       "Přehled",
       card(card_header("Náklady vs. kvalita"),
-           card_body(plotOutput("scatter", height = "440px"))),
+           card_body(
+             plotOutput("scatter", height = "440px",
+                        hover = hoverOpts("scatter_hover", delay = 80, delayType = "debounce"),
+                        click = "scatter_click"),
+             tags$small(class = "text-muted",
+                        "Najeďte myší na bod (nebo klikněte) pro detail obce."),
+             uiOutput("scatter_info"))),
       card(card_header("Celkové pořadí"), DTOutput("full_tbl"))
     ),
 
@@ -453,6 +459,31 @@ server <- function(input, output, session) {
   output$good_plot <- renderPlot(scatter_plot(quad(), "good"))
   output$bad_plot  <- renderPlot(scatter_plot(quad(), "bad"))
 
+  # Interactive readout: municipality nearest the cursor / last click.
+  # Pure base Shiny — uses only the event's data coords + axis domain (no extra
+  # packages, no pixel coordmap), so it survives WebAssembly compilation.
+  output$scatter_info <- renderUI({
+    ev <- input$scatter_hover %||% input$scatter_click
+    if (is.null(ev) || is.null(ev$x) || is.null(ev$y)) return(NULL)
+    d <- quad()
+    d <- d[!is.na(d[[COST]]) & !is.na(d$score), ]
+    if (nrow(d) == 0) return(NULL)
+    xr <- (ev$domain$right - ev$domain$left); if (is.null(xr) || xr == 0) xr <- 1
+    yr <- (ev$domain$top - ev$domain$bottom); if (is.null(yr) || yr == 0) yr <- 1
+    dist <- sqrt(((d[[COST]] - ev$x) / xr)^2 + ((d$score - ev$y) / yr)^2)
+    i <- which.min(dist)
+    if (dist[i] > 0.05) return(NULL)  # only when actually near a point
+    h <- d[i, ]
+    tags$div(class = "border rounded p-2 mt-2",
+      tags$strong(h$obec),
+      sprintf(" — skóre %s · %s %s · %s obyv. · %s obyv./km²",
+              round(h$score, 1),
+              format(round(h[[COST]]), big.mark = " "), COST_UNIT,
+              format(round(h$population), big.mark = " "),
+              format(round(h$density), big.mark = " ")),
+      tags$span(class = "text-muted", sprintf("  [%s]", h$quadrant)))
+  })
+
   output$good_caption <- renderText({
     q <- quad(); n <- sum(q$quadrant == GOOD_LAB)
     sprintf("Kvadrant vlevo nahoře: %d obcí pod mediánem nákladů a nad mediánem kvality. Řazeno podle skóre kvality.", n)
@@ -476,24 +507,24 @@ server <- function(input, output, session) {
                   population = "Obyvatel", density = "Hustota")
   cost_map <- setNames(paste0(COST_LAB, " (", COST_UNIT, ")"), COST)
 
-  output$full_tbl <- renderDT({
+  # Shared column set + header map so all three tables show the same data:
+  # rank, obec, score, cost, pop, density, then every active component.
+  rank_columns <- function() c("rank", "obec", "score", COST, "population", "density", active_cols())
+  rank_names   <- function() {
     act <- active_cols(); beta <- beta_optima()
     comp_map <- setNames(
       vapply(act, function(c) paste0(marker(c, beta), " ", LABS[[c]], " (", UNITS[[c]], ")"), ""),
       act)
-    base_tbl(scored(),
-             cols = c("rank", "obec", "score", COST, "population", "density", act),
-             names_map = c(common_map, cost_map, comp_map), pageLength = 25)
-  })
+    c(common_map, cost_map, comp_map)
+  }
+  rank_tbl <- function(df, pageLength = 10) base_tbl(df, rank_columns(), rank_names(), pageLength)
 
-  quad_cols <- function() c("obec", "score", COST, "population", "density")
+  output$full_tbl <- renderDT(rank_tbl(scored(), pageLength = 25))
   output$good_tbl <- renderDT({
-    g <- quad(); g <- g[g$quadrant == GOOD_LAB, ] %>% arrange(desc(score))
-    base_tbl(g, quad_cols(), c(common_map, cost_map))
+    g <- quad(); rank_tbl(g[g$quadrant == GOOD_LAB, ] %>% arrange(desc(score)))
   })
   output$bad_tbl <- renderDT({
-    b <- quad(); b <- b[b$quadrant == BAD_LAB, ] %>% arrange(score)
-    base_tbl(b, quad_cols(), c(common_map, cost_map))
+    b <- quad(); rank_tbl(b[b$quadrant == BAD_LAB, ] %>% arrange(score))
   })
 }
 
