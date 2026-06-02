@@ -33,12 +33,24 @@ Rscript pipeline/02_process.R       # build the app's data file
 Rscript -e 'shiny::runApp("app", launch.browser = TRUE)'
 ```
 
+## App layout (4 tabs)
+
+1. **Nastavení & info** — project explanation + the index weight sliders.
+2. **Přehled** — the **cost-vs-quality scatter** (cost/capita on X, index on Y,
+   median lines splitting four quadrants) + the full sortable ranking.
+3. **Dobré obce** — the low-cost / high-quality quadrant (exemplars).
+4. **Špatné obce** — the high-cost / low-quality quadrant (warning cases).
+
+Population/density filters live in a shared sidebar across all tabs.
+
 ## The index
 
+- **Cost is not in the index.** `naklady_per_capita` is the *accompanying*
+  dimension plotted against the index on the Přehled scatter. Quadrants are split
+  at the median cost and median quality of the current selection.
 - **Components** are defined once in `R/data.R` (`INDEX_COMPONENTS`) — the single
   source of truth for column names, UI labels, sidebar group, "good" direction
-  and default weight. There are 15 scored components grouped into four themes:
-  - **Náklady** — cost per capita
+  and default weight. There are 14 scored components grouped into three themes:
   - **Plnění cíle** — statutory recycling-target compliance, plus a derived
     separation share (separated ÷ total municipal waste)
   - **Produkce** — waste production, 4 categories (municipal / mixed / bulky /

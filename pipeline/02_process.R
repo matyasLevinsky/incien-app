@@ -97,8 +97,9 @@ master <- master %>% mutate(
                      sepT_ppsk / prodT_komunalni * 100, NA_real_)
 )
 
-# Keep identity + filters + scored columns (+ total cost for display); drop tonnage intermediates.
-keep <- c("kod_obec", "obec", "population", "area_ha", "density", "naklady", index_cols())
+# Keep identity + filters + cost dimension + scored columns; drop tonnage intermediates.
+keep <- c("kod_obec", "obec", "population", "area_ha", "density",
+          "naklady", COST_COMPONENT$col, index_cols())
 master <- master %>% select(any_of(keep)) %>% arrange(obec)
 
 # Ensure every declared index column exists.

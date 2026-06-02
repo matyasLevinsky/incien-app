@@ -30,13 +30,14 @@ paq_bs_theme <- function() {
 }
 
 # Minimal ggplot2 theme matching the report look (sans, subtle grid).
+# Axis titles are kept (the scatter needs them); bar charts blank them locally.
 theme_paq_app <- function(base_size = 12) {
   ggplot2::theme_minimal(base_size = base_size) +
     ggplot2::theme(
       panel.grid.minor = ggplot2::element_blank(),
       panel.grid.major = ggplot2::element_line(colour = PAQ$grid, linewidth = 0.25),
       plot.title.position = "plot",
-      axis.title = ggplot2::element_blank(),
+      axis.title = ggplot2::element_text(colour = PAQ$caption),
       plot.title = ggplot2::element_text(colour = PAQ$night_blue, face = "bold")
     )
 }

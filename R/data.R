@@ -28,11 +28,9 @@ proj_path <- function(...) {
 # Tonnage categories from druk (production ×4, separation ×8) are converted to
 # kg per capita in 02_process.R so they are comparable across municipality size.
 # `sep_share` is derived (separated ÷ total municipal waste).
+# NOTE: cost (naklady_per_capita) is intentionally NOT an index component — it is
+# the accompanying dimension plotted against the index (see COST_COMPONENT).
 INDEX_COMPONENTS <- list(
-  # ── Náklady (cost) ──
-  list(col = "naklady_per_capita", label = "Náklady na obyvatele", group = "Náklady",
-       direction = "lower",  unit = "Kč/obyv.", default = 50),
-
   # ── Plnění cíle třídění (statutory recycling-target compliance) ──
   list(col = "plneni_cile",        label = "Plnění cíle třídění",  group = "Plnění cíle",
        direction = "higher", unit = "%",        default = 50),
@@ -69,6 +67,10 @@ INDEX_COMPONENTS <- list(
   list(col = "sep_nebezp", label = "Separace: nebezpečný odpad", group = "Separace",
        direction = "higher", unit = "kg/obyv.", default = 0)
 )
+
+# The accompanying cost dimension — plotted against the index, never scored.
+COST_COMPONENT <- list(col = "naklady_per_capita", label = "Náklady na obyvatele",
+                       unit = "Kč/obyv.", direction = "lower")
 
 # Columns used only for filtering / display, never scored.
 FILTER_COMPONENTS <- list(
