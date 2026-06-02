@@ -1,0 +1,16 @@
+/* Minor PAQ-flavoured tweaks layered on top of the bslib theme. */
+
+.card-header {
+  font-weight: 600;
+  color: #001056; /* PAQ night blue */
+}
+
+.value-box .value-box-title {
+  font-size: 0.85rem;
+}
+
+/* Keep the score tables compact. */
+table.dataTable td, table.dataTable th {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
