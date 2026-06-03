@@ -154,6 +154,17 @@ výběru.
 
 *Poznámka k datům: %s*
 ", format(nrow(DATA), big.mark = " "), NOTE)
+
+  # ── Data-exploration variable list (Explorace dat tab) ──
+  # Every analytically meaningful raw column, with a label + unit lookup so the
+  # histogram can label its axis. Index components + cost + the two filter cols.
+  EXP_COLS <- c(COLS, COST, "population", "density")
+  EXP_LABS <- c(LABS, setNames(COST_LAB, COST),
+                population = "Počet obyvatel", density = "Hustota")
+  EXP_UNITS <- c(UNITS, setNames(COST_UNIT, COST),
+                 population = "obyv.", density = "obyv./km²")
+  explore_choices <- setNames(
+    EXP_COLS, sprintf("%s (%s)", EXP_LABS[EXP_COLS], EXP_UNITS[EXP_COLS]))
 }
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -241,6 +252,19 @@ if (!data_ok) {
                     textOutput("bad_caption", inline = TRUE)),
              plotOutput("bad_plot", height = "300px"))),
       card(card_header("Seznam špatných obcí"), DTOutput("bad_tbl"))
+    ),
+
+    nav_panel(
+      "Explorace dat",
+      card(
+        card_header("Rozdělení hodnot ukazatele (všechny obce ČR)"),
+        card_body(
+          selectInput("explore_var", "Ukazatel:", choices = explore_choices,
+                      selected = "plneni_cile", width = "420px"),
+          plotOutput("hist_plot", height = "440px"),
+          tags$small(class = "text-muted", textOutput("hist_caption", inline = TRUE))
+        )
+      )
     )
   )
 }
@@ -468,6 +492,42 @@ server <- function(input, output, session) {
   output$scatter   <- renderPlot(scatter_plot(quad(), "all", highlight = selected_obec()))
   output$good_plot <- renderPlot(scatter_plot(quad(), "good"))
   output$bad_plot  <- renderPlot(scatter_plot(quad(), "bad"))
+
+  # ── Explorace dat: histogram of one raw variable over ALL municipalities ──
+  # Full dataset (no pop/density filter, no clamping) → true distribution.
+  # Log x-axis compresses the long right tail (outliers). Only positive values
+  # can be shown on a log scale, so zeros are dropped (and reported below).
+  log_breaks <- function(v) {
+    lo <- floor(log10(min(v))); hi <- ceiling(log10(max(v)))
+    10^(lo:hi)
+  }
+  hist_plot <- function(col) {
+    v <- DATA[[col]]; v <- v[is.finite(v) & v > 0]
+    if (length(v) == 0) return(ggplot() + theme_void())
+    ggplot(data.frame(v = v), aes(v)) +
+      geom_histogram(bins = 40, fill = PAQ$blue, colour = "white", linewidth = 0.2) +
+      geom_vline(xintercept = median(v), linetype = "dashed", colour = PAQ$merlot) +
+      scale_x_log10(breaks = log_breaks(v),
+                    labels = function(x) format(x, big.mark = " ",
+                                                scientific = FALSE, trim = TRUE)) +
+      labs(x = sprintf("%s (%s, log škála)", EXP_LABS[[col]], EXP_UNITS[[col]]),
+           y = "Počet obcí") +
+      theme_paq_app(13)
+  }
+  output$hist_plot <- renderPlot(hist_plot(input$explore_var %||% "plneni_cile"))
+  output$hist_caption <- renderText({
+    col <- input$explore_var %||% "plneni_cile"
+    all_v <- DATA[[col]]; all_v <- all_v[is.finite(all_v)]
+    v <- all_v[all_v > 0]
+    if (length(v) == 0) return("Bez kladných hodnot pro tento ukazatel (log škálu nelze zobrazit).")
+    f <- function(x) format(round(x, 1), big.mark = " ")
+    n_zero <- sum(all_v <= 0)
+    zero_txt <- if (n_zero > 0)
+      sprintf(" · %s obcí s nulovou hodnotou vynecháno (log škála)", format(n_zero, big.mark = " ")) else ""
+    sprintf("%s obcí s kladnou hodnotou · min %s · medián %s · max %s %s%s (přerušovaná čára = medián)",
+            format(length(v), big.mark = " "),
+            f(min(v)), f(median(v)), f(max(v)), EXP_UNITS[[col]], zero_txt)
+  })
 
   # Municipality nearest a plot event (data coords + axis domain only — no extra
   # packages, no pixel coordmap), so it survives WebAssembly compilation.
