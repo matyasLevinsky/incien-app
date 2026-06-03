@@ -40,11 +40,34 @@ if (data_ok) {
   COST_UNIT<- COST_COMPONENT$unit
   NOTE     <- bundle$meta$note %||% ""
 
-  rng <- function(col) {
-    v <- DATA[[col]][is.finite(DATA[[col]])]
-    if (length(v) == 0) c(0, 1) else range(v)
+  # Filterable columns: population & density on a LOG scale, then cost and every
+  # index component on a linear scale. Each gets a range slider in the (long)
+  # filter card; a slider left at its full extent does not filter.
+  FILTER_SPECS <- c(
+    list(
+      list(col = "population", label = "Počet obyvatel", unit = "obyv.",     log = TRUE),
+      list(col = "density",    label = "Hustota",        unit = "obyv./km²", log = TRUE),
+      list(col = COST,         label = COST_LAB,         unit = COST_UNIT,   log = FALSE)),
+    lapply(INDEX_COMPONENTS, function(x)
+      list(col = x$col, label = x$label, unit = x$unit, log = FALSE)))
+
+  # Slider extent in slider units (log10 for log filters, raw otherwise).
+  filter_extent <- function(spec) {
+    v <- DATA[[spec$col]]; v <- v[is.finite(v)]
+    if (spec$log) v <- v[v > 0]
+    if (length(v) == 0) return(NULL)
+    if (spec$log)
+      list(min = floor(log10(min(v)) * 100) / 100,
+           max = ceiling(log10(max(v)) * 100) / 100, step = 0.01)
+    else {
+      lo <- floor(min(v)); hi <- ceiling(max(v))
+      list(min = lo, max = hi, step = signif(max((hi - lo) / 100, 1e-6), 2))
+    }
   }
-  pop_rng <- rng("population"); den_rng <- rng("density")
+  FILTER_EXT <- lapply(FILTER_SPECS, filter_extent)
+  names(FILTER_EXT) <- vapply(FILTER_SPECS, `[[`, "", "col")
+  keep_f <- !vapply(FILTER_EXT, is.null, logical(1))
+  FILTER_SPECS <- FILTER_SPECS[keep_f]; FILTER_EXT <- FILTER_EXT[keep_f]
 
   slider_for <- function(col) {
     arrow <- if (identical(DIRS[[col]], "lower")) "↓" else "↑"
@@ -89,30 +112,24 @@ if (data_ok) {
     )
   )
 
+  # Long filter card: one range slider per value. Log filters (population,
+  # density) add a live readout of the real (un-logged) selected range.
+  filter_slider <- function(spec) {
+    ext <- FILTER_EXT[[spec$col]]; id <- paste0("f_", spec$col)
+    lab <- sprintf("%s (%s%s)", spec$label, spec$unit, if (spec$log) ", log" else "")
+    sl <- sliderInput(id, lab, min = ext$min, max = ext$max,
+                      value = c(ext$min, ext$max), step = ext$step)
+    if (spec$log)
+      tagList(sl, tags$small(class = "text-muted",
+                             textOutput(paste0(id, "_lab"), inline = TRUE)))
+    else sl
+  }
   filter_card <- card(
     card_header("Filtry výběru obcí"),
     card_body(
-      sliderInput("f_pop", "Počet obyvatel",
-                  min = floor(pop_rng[1]), max = ceiling(pop_rng[2]),
-                  value = c(floor(pop_rng[1]), ceiling(pop_rng[2]))),
-      sliderInput("f_den", "Hustota (obyv./km²)",
-                  min = floor(den_rng[1]), max = ceiling(den_rng[2]),
-                  value = c(floor(den_rng[1]), ceiling(den_rng[2])))
-    )
-  )
-
-  # Outlier treatment (winsorization). Cost is clamped only from below (low
-  # cost ≈ bad data); production/separation are clamped at both extremes.
-  clamp_card <- card(
-    card_header("Ošetření odlehlých hodnot (clamping)"),
-    card_body(
-      sliderInput("clamp_cost", "Náklady/obyv. – ořez obou konců (percentil)",
-                  min = 0, max = 0.20, value = 0.01, step = 0.01),
-      tags$small(class = "text-muted", textOutput("clamp_cost_czk", inline = TRUE)),
-      sliderInput("clamp_prod", "Produkce – ořez obou konců (percentil)",
-                  min = 0, max = 0.10, value = 0.01, step = 0.01),
-      sliderInput("clamp_sep", "Separace – ořez obou konců (percentil)",
-                  min = 0, max = 0.10, value = 0.01, step = 0.01)
+      tags$small(class = "text-muted",
+                 "Posuvník v plné poloze nefiltruje. Zúžením vyberete jen obce se známou hodnotou v daném rozsahu."),
+      lapply(FILTER_SPECS, filter_slider)
     )
   )
 
@@ -231,8 +248,8 @@ if (!data_ok) {
         # Separace váhy | Separace optimum (the optimum sits next to its weights).
         layout_columns(
           col_widths = c(3, 3, 3, 3),
-          div(filter_card, weights_plnenicile),
-          div(clamp_card, weights_produkce),
+          filter_card,
+          div(weights_plnenicile, weights_produkce),
           weights_separace,
           optimum_separace
         )
@@ -304,23 +321,38 @@ server <- function(input, output, session) {
   weights     <- reactive(setNames(vapply(COLS, function(c) input[[paste0("w_", c)]] %||% 0, numeric(1)), COLS))
   active_cols <- reactive({ w <- weights(); names(w)[w > 0] })
 
+  # Apply every active range filter. A slider left at its full extent is skipped
+  # (so unused filters keep NA rows); a narrowed slider keeps only municipalities
+  # with a known value inside the range. Log filters compare in 10^ space.
   filtered <- reactive({
     d <- DATA
-    d <- d[!is.na(d$population) & d$population >= input$f_pop[1] & d$population <= input$f_pop[2], ]
-    d <- d[!is.na(d$density) & d$density >= input$f_den[1] & d$density <= input$f_den[2], ]
+    for (s in FILTER_SPECS) {
+      id <- paste0("f_", s$col); rng <- input[[id]]
+      if (is.null(rng)) next
+      ext <- FILTER_EXT[[s$col]]
+      if (rng[1] <= ext$min + 1e-9 && rng[2] >= ext$max - 1e-9) next  # full range
+      lo <- rng[1]; hi <- rng[2]
+      if (s$log) { lo <- 10^lo; hi <- 10^hi }
+      v <- d[[s$col]]
+      d <- d[!is.na(v) & v >= lo & v <= hi, , drop = FALSE]
+    }
     d
   })
 
-  # Apply user-set clamping to the filtered cohort before scoring/plotting.
-  prepared <- reactive({
-    d <- filtered()
-    if ((input$clamp_cost %||% 0) > 0) d[[COST]] <- clamp_winsor(d[[COST]], input$clamp_cost)
-    pp <- input$clamp_prod %||% 0
-    if (pp > 0) for (col in COLS[GROUPS == "Produkce"]) d[[col]] <- clamp_winsor(d[[col]], pp)
-    ps <- input$clamp_sep %||% 0
-    if (ps > 0) for (col in COLS[GROUPS == "Separace"]) d[[col]] <- clamp_winsor(d[[col]], ps)
-    d
+  # Live "real range" readout under each log-scaled filter slider.
+  lapply(FILTER_SPECS, function(s) {
+    if (!isTRUE(s$log)) return(NULL)
+    id <- paste0("f_", s$col)
+    output[[paste0(id, "_lab")]] <- renderText({
+      r <- input[[id]]; if (is.null(r)) return("")
+      f <- function(x) format(round(10^x), big.mark = " ")
+      sprintf("Výběr: %s – %s %s", f(r[1]), f(r[2]), s$unit)
+    })
   })
+
+  # No outlier clamping (the clamping card was removed) — score the filtered
+  # cohort directly.
+  prepared <- reactive(filtered())
 
   # Separation categories switched to beta scoring → named numeric (col → optimum).
   beta_optima <- reactive({
@@ -384,17 +416,6 @@ server <- function(input, output, session) {
             format(nrow(s), big.mark = " "), median(s$score))
   })
 
-  output$clamp_cost_czk <- renderText({
-    p <- input$clamp_cost %||% 0
-    if (p <= 0) return("Bez ořezu nákladů")
-    v <- filtered()[[COST]]
-    lo <- clamp_cutoff(v, p); hi <- clamp_cutoff(v, 1 - p)
-    if (is.na(lo)) return("Bez dat")
-    fmt <- function(x) format(round(x), big.mark = " ")
-    sprintf("Hranice: %s – %s Kč/obyv. — %d obcí ořezáno",
-            fmt(lo), fmt(hi), sum(!is.na(v) & (v < lo | v > hi)))
-  })
-
   # Municipalities with both a score and a cost → placed into quadrants.
   quad <- reactive({
     s <- scored()
@@ -430,17 +451,9 @@ server <- function(input, output, session) {
     )
   })
 
-  # Clamping applied to ALL municipalities (no pop/density filter), so any fixed
-  # model obec is always present and its percentiles are stable.
-  prepared_full <- reactive({
-    d <- DATA
-    if ((input$clamp_cost %||% 0) > 0) d[[COST]] <- clamp_winsor(d[[COST]], input$clamp_cost)
-    pp <- input$clamp_prod %||% 0
-    if (pp > 0) for (col in COLS[GROUPS == "Produkce"]) d[[col]] <- clamp_winsor(d[[col]], pp)
-    ps <- input$clamp_sep %||% 0
-    if (ps > 0) for (col in COLS[GROUPS == "Separace"]) d[[col]] <- clamp_winsor(d[[col]], ps)
-    d
-  })
+  # ALL municipalities (ignores the filters) so a fixed model obec is always
+  # present and its percentiles are stable.
+  prepared_full <- reactive(DATA)
 
   # Worked example for a fixed model municipality (chosen by the user).
   output$example <- renderUI({
