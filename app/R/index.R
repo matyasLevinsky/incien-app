@@ -84,6 +84,18 @@ score_component <- function(x, direction, opt = NULL, conc = BETA_CONC) {
   beta_score(x, opt, rng[1], rng[2], conc)
 }
 
+# Flat zero/NA penalty multiplier (0..1) per row. If ANY penalized column is
+# zero-or-missing, that row's score is multiplied by (1 - strength); else 1.
+# strength is a fraction in [0,1]. No cols / strength<=0 → all 1 (no penalty).
+zero_penalty_multiplier <- function(df, cols, strength) {
+  if (length(cols) == 0 || is.null(strength) || strength <= 0) return(rep(1, nrow(df)))
+  cols <- intersect(cols, names(df))
+  if (length(cols) == 0) return(rep(1, nrow(df)))
+  hit <- rep(FALSE, nrow(df))
+  for (col in cols) { v <- df[[col]]; hit <- hit | is.na(v) | v == 0 }
+  ifelse(hit, 1 - strength, 1)
+}
+
 # Compute the composite waste index for a data frame of municipalities.
 #
 #   df          – municipalities table (one row each); must contain the columns

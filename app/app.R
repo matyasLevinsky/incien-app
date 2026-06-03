@@ -253,6 +253,14 @@ if (!data_ok) {
                radioButtons("example_obec", "Modelová obec:",
                             choices = preset_choices, selected = preset_default, inline = TRUE),
                uiOutput("example"))),
+        card(card_header("Penalizace za nulový sběr"),
+             card_body(
+               tags$small(class = "text-muted",
+                 "Má-li obec u některého z vybraných ukazatelů nulovou nebo chybějící hodnotu, sníží se její celkové skóre o zvolené procento (jednorázově, bez ohledu na počet takových ukazatelů)."),
+               selectInput("penalty_cols", "Penalizované ukazatele:",
+                           choices = setNames(COLS, unname(LABS)), multiple = TRUE, width = "100%"),
+               sliderInput("penalty_strength", "Síla penalizace (snížení skóre)",
+                           min = 0, max = 50, value = 10, step = 5, post = "%"))),
         # 4 columns of sliders: Filtr+Plnění cíle | Clamping+Produkce |
         # Separace váhy | Separace optimum (the optimum sits next to its weights).
         layout_columns(
@@ -330,6 +338,10 @@ server <- function(input, output, session) {
   weights     <- reactive(setNames(vapply(COLS, function(c) input[[paste0("w_", c)]] %||% 0, numeric(1)), COLS))
   active_cols <- reactive({ w <- weights(); names(w)[w > 0] })
 
+  # Zero-collection penalty: which metrics, and how strong (fraction 0..1).
+  penalty_cols     <- reactive(input$penalty_cols %||% character(0))
+  penalty_strength <- reactive((input$penalty_strength %||% 0) / 100)
+
   # Apply every active range filter. A slider left at its full extent is skipped
   # (so unused filters keep NA rows); a narrowed slider keeps only municipalities
   # with a known value inside the range. Log filters compare in 10^ space.
@@ -399,8 +411,9 @@ server <- function(input, output, session) {
   })
 
   scored <- reactive({
-    compute_index(prepared(), weights(), DIRS, beta = beta_optima()) %>%
-      filter(!is.na(score)) %>% arrange(desc(score)) %>% mutate(rank = row_number())
+    d <- compute_index(prepared(), weights(), DIRS, beta = beta_optima())
+    d$score <- d$score * zero_penalty_multiplier(d, penalty_cols(), penalty_strength())
+    d %>% filter(!is.na(score)) %>% arrange(desc(score)) %>% mutate(rank = row_number())
   })
 
   # Sidebar: live distribution of the current index scores (reflects weights,
@@ -496,6 +509,19 @@ server <- function(input, output, session) {
     eff_w <- sum(vapply(act, function(col) if (is.na(op[[col]][mi])) 0 else w[[col]], 0))
     csum  <- sum(vapply(act, function(col) { p <- op[[col]][mi]; if (is.na(p)) 0 else w[[col]] * p }, 0))
     score <- if (eff_w > 0) csum / eff_w else NA_real_
+    # Zero-collection penalty (flat) for this obec, if any penalized metric is 0/NA.
+    pcols <- penalty_cols(); pstr <- penalty_strength()
+    mult  <- zero_penalty_multiplier(m, pcols, pstr)
+    triggered <- pcols[vapply(pcols, function(c)
+      c %in% names(m) && (is.na(m[[c]]) || m[[c]] == 0), logical(1))]
+    penalty_ui <- if (mult < 1 && !is.na(score)) {
+      tags$p(tags$strong(sprintf(
+        "Penalizace za nulový sběr (%s): ×%s → Skóre = %s",
+        paste(unname(LABS[triggered]), collapse = ", "),
+        format(round(mult, 2), nsmall = 2),
+        round(score * mult, 1))),
+        class = "text-danger")
+    } else NULL
     tagList(
       tags$p(tags$strong(sprintf("%s", m$obec)),
              sprintf(" — %s obyv., %s Kč/obyv.",
@@ -508,6 +534,7 @@ server <- function(input, output, session) {
         tags$tbody(rows)),
       tags$p(tags$strong(sprintf("Skóre = %s / %s = %s",
              format(round(csum, 1), big.mark = " "), eff_w, round(score, 1)))),
+      penalty_ui,
       tags$small(class = "text-muted",
                  "Skóre komponent počítáno vůči všem obcím ČR (nezávisle na filtru).")
     )
