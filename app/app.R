@@ -112,13 +112,22 @@ if (data_ok) {
     )
   )
 
+  # Filters that start narrowed (active) on app launch — raw units, linear cols.
+  FILTER_DEFAULTS <- list(
+    prod_komunalni = c(32, 2016),
+    prod_smesny    = c(15, 1005)
+  )
+
   # Long filter card: one range slider per value. Log filters (population,
   # density) add a live readout of the real (un-logged) selected range.
   filter_slider <- function(spec) {
     ext <- FILTER_EXT[[spec$col]]; id <- paste0("f_", spec$col)
     lab <- sprintf("%s (%s%s)", spec$label, spec$unit, if (spec$log) ", log" else "")
+    dflt <- FILTER_DEFAULTS[[spec$col]]
+    val <- if (is.null(dflt)) c(ext$min, ext$max)
+           else c(max(dflt[1], ext$min), min(dflt[2], ext$max))
     sl <- sliderInput(id, lab, min = ext$min, max = ext$max,
-                      value = c(ext$min, ext$max), step = ext$step)
+                      value = val, step = ext$step)
     if (spec$log)
       tagList(sl, tags$small(class = "text-muted",
                              textOutput(paste0(id, "_lab"), inline = TRUE)))

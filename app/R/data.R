@@ -25,9 +25,9 @@ INDEX_COMPONENTS <- list(
 
   # ── Produkce odpadu (production, kg/obyv., less = better) ──
   list(col = "prod_komunalni", label = "Produkce: komunální odpad",     group = "Produkce",
-       direction = "lower", unit = "kg/obyv.", default = 50),
-  list(col = "prod_smesny",    label = "Produkce: směsný komunální",    group = "Produkce",
        direction = "lower", unit = "kg/obyv.", default = 0),
+  list(col = "prod_smesny",    label = "Produkce: směsný komunální",    group = "Produkce",
+       direction = "lower", unit = "kg/obyv.", default = 50),
   list(col = "prod_objemny",   label = "Produkce: objemný odpad",       group = "Produkce",
        direction = "lower", unit = "kg/obyv.", default = 0),
   list(col = "prod_stavebni",  label = "Produkce: stavební a demoliční", group = "Produkce",
@@ -36,9 +36,9 @@ INDEX_COMPONENTS <- list(
   # ── Separace (separated collection, more = better) ──
   # Derived headline share first, then the per-capita category tonnages.
   list(col = "sep_share",  label = "Podíl separace (vytříděno / komunální odpad)",
-       group = "Separace", direction = "higher", unit = "%", default = 50),
+       group = "Separace", direction = "higher", unit = "%", default = 0),
   list(col = "sep_ppsk",   label = "Separace: papír+plast+sklo+kov", group = "Separace",
-       direction = "higher", unit = "kg/obyv.", default = 0),
+       direction = "higher", unit = "kg/obyv.", default = 50),
   list(col = "sep_papir",  label = "Separace: papír",   group = "Separace",
        direction = "higher", unit = "kg/obyv.", default = 0),
   list(col = "sep_plast",  label = "Separace: plast",   group = "Separace",
@@ -61,13 +61,13 @@ COST_COMPONENT <- list(col = "naklady_per_capita", label = "Náklady na obyvatel
 
 # Per-capita separation categories that can switch from linear (higher = better)
 # to beta "closeness-to-optimum" scoring (everything in group "Separace" except
-# the derived share). Defaults: beta ON for bio (30 kg/obyv.) and textile (5),
-# OFF (linear) for the rest.
+# the derived share). Beta is OFF (linear) by default for every category; bio and
+# textile keep their preset optimum values for when the user enables the toggle.
 SEP_CATEGORIES <- c("sep_ppsk", "sep_papir", "sep_plast", "sep_sklo",
                     "sep_kov", "sep_bio", "sep_textil", "sep_nebezp")
 SEP_OPTIMUM_DEFAULTS <- list(
-  sep_bio    = list(on = TRUE, opt = 60),
-  sep_textil = list(on = TRUE, opt = 3)
+  sep_bio    = list(on = FALSE, opt = 60),
+  sep_textil = list(on = FALSE, opt = 3)
 )
 sep_optimum_default <- function(col) {
   SEP_OPTIMUM_DEFAULTS[[col]] %||% list(on = FALSE, opt = 0)
