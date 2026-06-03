@@ -5,8 +5,10 @@
 # Run: Rscript requirements.R
 
 cran <- c(
-  "shiny", "bslib", "DT", "ggplot2", "dplyr", "tidyr",
-  "scales", "here", "digest"
+  # app (must all be available as webR binaries for the Shinylive build):
+  "shiny", "bslib", "DT", "ggplot2", "dplyr", "shinyjs",
+  # pipeline / data refresh:
+  "tidyr", "scales", "here", "digest"
 )
 
 installed <- rownames(installed.packages())
