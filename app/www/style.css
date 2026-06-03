@@ -13,6 +13,9 @@
 .opt-cell { margin-bottom: 0.5rem; }
 .opt-disabled { opacity: 0.4; }
 
+/* Sidebar live score distribution: stays in view while the page scrolls. */
+.side-dist { position: sticky; top: 0.5rem; }
+
 /* Keep the score tables compact. */
 table.dataTable td, table.dataTable th {
   padding: 4px 8px;

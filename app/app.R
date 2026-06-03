@@ -175,97 +175,115 @@ if (!data_ok) {
         tags$pre("Rscript pipeline/01_extract.R\nRscript pipeline/02_process.R"),
         p(tags$small(conditionMessage(bundle))))))
 } else {
-  ui <- page_navbar(
-    id = "main_nav",
+  # Sections live in the left sidebar (radio nav), not a top navbar. The sidebar
+  # also carries a sticky, always-visible histogram of the current index scores.
+  sections <- c("Info", "Nastavení", "Přehled", "Dobré obce", "Špatné obce", "Explorace dat")
+
+  ui <- page_sidebar(
     title = "Index odpadového hospodářství obcí",
     theme = paq_bs_theme(),
     fillable = FALSE,  # natural content height; the page scrolls
+    useShinyjs(),
+    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "style.css")),
+    sidebar = sidebar(
+      width = 330,
+      title = "Sekce",
+      radioButtons("nav_sel", NULL, choices = sections, selected = "Info"),
+      hr(),
+      div(class = "side-dist",
+          tags$strong("Rozdělení skóre indexu",
+                      style = sprintf("color:%s", PAQ$night_blue)),
+          plotOutput("side_hist", height = "170px"),
+          tags$small(class = "text-muted", textOutput("side_hist_cap", inline = TRUE)))
+    ),
 
-    nav_panel(
-      "Info",
-      card(
-        card_header("O projektu a indexu"),
-        card_body(
-          markdown(intro_md),
-          hr(),
-          actionLink("go_nastaveni", "Pokračovat na Nastavení →",
-                     class = "btn btn-primary")
+    navset_hidden(
+      id = "main_nav",
+
+      nav_panel_hidden(
+        "Info",
+        card(
+          card_header("O projektu a indexu"),
+          card_body(
+            markdown(intro_md),
+            hr(),
+            actionLink("go_nastaveni", "Pokračovat na Nastavení →",
+                       class = "btn btn-primary")
+          )
         )
-      )
-    ),
-
-    nav_panel(
-      "Nastavení",
-      useShinyjs(),
-      tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "style.css")),
-      layout_columns(
-        fill = FALSE,
-        value_box("Obcí ve výběru", textOutput("n_munis"), theme = "secondary"),
-        value_box("Hodnocených (se skóre)", textOutput("n_scored"), theme = "primary"),
-        value_box("Aktivních komponent", textOutput("n_comp"), theme = "light")
       ),
-      card(card_header("Výsledný vzorec"), card_body(uiOutput("formula"))),
-      card(card_header("Příklad výpočtu"),
-           card_body(
-             radioButtons("example_obec", "Modelová obec:",
-                          choices = preset_choices, selected = preset_default, inline = TRUE),
-             uiOutput("example"))),
-      # 4 columns of sliders: Filtr+Plnění cíle | Clamping+Produkce |
-      # Separace váhy | Separace optimum (the optimum sits next to its weights).
-      layout_columns(
-        col_widths = c(3, 3, 3, 3),
-        div(filter_card, weights_plnenicile),
-        div(clamp_card, weights_produkce),
-        weights_separace,
-        optimum_separace
-      )
-    ),
 
-    nav_panel(
-      "Přehled",
-      card(card_header("Náklady vs. kvalita"),
-           card_body(
-             plotOutput("scatter", height = "440px",
-                        hover = hoverOpts("scatter_hover", delay = 80, delayType = "debounce"),
-                        click = "scatter_click"),
-             tags$small(class = "text-muted",
-                        "Najeďte myší na bod (nebo klikněte) pro detail obce."),
-             uiOutput("scatter_info"))),
-      card(card_header("Celkové pořadí"), DTOutput("full_tbl"))
-    ),
+      nav_panel_hidden(
+        "Nastavení",
+        layout_columns(
+          fill = FALSE,
+          value_box("Obcí ve výběru", textOutput("n_munis"), theme = "secondary"),
+          value_box("Hodnocených (se skóre)", textOutput("n_scored"), theme = "primary"),
+          value_box("Aktivních komponent", textOutput("n_comp"), theme = "light")
+        ),
+        card(card_header("Výsledný vzorec"), card_body(uiOutput("formula"))),
+        card(card_header("Příklad výpočtu"),
+             card_body(
+               radioButtons("example_obec", "Modelová obec:",
+                            choices = preset_choices, selected = preset_default, inline = TRUE),
+               uiOutput("example"))),
+        # 4 columns of sliders: Filtr+Plnění cíle | Clamping+Produkce |
+        # Separace váhy | Separace optimum (the optimum sits next to its weights).
+        layout_columns(
+          col_widths = c(3, 3, 3, 3),
+          div(filter_card, weights_plnenicile),
+          div(clamp_card, weights_produkce),
+          weights_separace,
+          optimum_separace
+        )
+      ),
 
-    nav_panel(
-      "Dobré obce",
-      card(card_header("Nízké náklady, vysoká kvalita"),
-           card_body(
-             tags$p(class = "text-muted",
-                    textOutput("good_caption", inline = TRUE)),
-             plotOutput("good_plot", height = "300px"))),
-      card(card_header("Seznam dobrých obcí"), DTOutput("good_tbl"))
-    ),
+      nav_panel_hidden(
+        "Přehled",
+        card(card_header("Náklady vs. kvalita"),
+             card_body(
+               plotOutput("scatter", height = "440px",
+                          hover = hoverOpts("scatter_hover", delay = 80, delayType = "debounce"),
+                          click = "scatter_click"),
+               tags$small(class = "text-muted",
+                          "Najeďte myší na bod (nebo klikněte) pro detail obce."),
+               uiOutput("scatter_info"))),
+        card(card_header("Celkové pořadí"), DTOutput("full_tbl"))
+      ),
 
-    nav_panel(
-      "Špatné obce",
-      card(card_header("Vysoké náklady, nízká kvalita"),
-           card_body(
-             tags$p(class = "text-muted",
-                    textOutput("bad_caption", inline = TRUE)),
-             plotOutput("bad_plot", height = "300px"))),
-      card(card_header("Seznam špatných obcí"), DTOutput("bad_tbl"))
-    ),
+      nav_panel_hidden(
+        "Dobré obce",
+        card(card_header("Nízké náklady, vysoká kvalita"),
+             card_body(
+               tags$p(class = "text-muted",
+                      textOutput("good_caption", inline = TRUE)),
+               plotOutput("good_plot", height = "300px"))),
+        card(card_header("Seznam dobrých obcí"), DTOutput("good_tbl"))
+      ),
 
-    nav_panel(
-      "Explorace dat",
-      card(
-        card_header("Rozdělení hodnot ukazatele (všechny obce ČR)"),
-        card_body(
-          selectInput("explore_var", "Ukazatel:", choices = explore_choices,
-                      selected = "plneni_cile", width = "420px"),
-          radioButtons("explore_scale", "Škála osy X:",
-                       choices = c("Lineární" = "lin", "Logaritmická" = "log"),
-                       selected = "log", inline = TRUE),
-          plotOutput("hist_plot", height = "440px"),
-          tags$small(class = "text-muted", textOutput("hist_caption", inline = TRUE))
+      nav_panel_hidden(
+        "Špatné obce",
+        card(card_header("Vysoké náklady, nízká kvalita"),
+             card_body(
+               tags$p(class = "text-muted",
+                      textOutput("bad_caption", inline = TRUE)),
+               plotOutput("bad_plot", height = "300px"))),
+        card(card_header("Seznam špatných obcí"), DTOutput("bad_tbl"))
+      ),
+
+      nav_panel_hidden(
+        "Explorace dat",
+        card(
+          card_header("Rozdělení hodnot ukazatele (všechny obce ČR)"),
+          card_body(
+            selectInput("explore_var", "Ukazatel:", choices = explore_choices,
+                        selected = "plneni_cile", width = "420px"),
+            radioButtons("explore_scale", "Škála osy X:",
+                         choices = c("Lineární" = "lin", "Logaritmická" = "log"),
+                         selected = "log", inline = TRUE),
+            plotOutput("hist_plot", height = "440px"),
+            tags$small(class = "text-muted", textOutput("hist_caption", inline = TRUE))
+          )
         )
       )
     )
@@ -276,8 +294,12 @@ if (!data_ok) {
 server <- function(input, output, session) {
   if (!data_ok) return(invisible(NULL))
 
-  # "Pokračovat na Nastavení" link on the Info page jumps to the Nastavení tab.
-  observeEvent(input$go_nastaveni, nav_select("main_nav", "Nastavení"))
+  # Sidebar radio drives which panel is shown in the hidden navset.
+  observeEvent(input$nav_sel, nav_select("main_nav", input$nav_sel))
+  # "Pokračovat na Nastavení" link on the Info page selects the Nastavení radio
+  # (which in turn switches the panel via the observer above).
+  observeEvent(input$go_nastaveni,
+               updateRadioButtons(session, "nav_sel", selected = "Nastavení"))
 
   weights     <- reactive(setNames(vapply(COLS, function(c) input[[paste0("w_", c)]] %||% 0, numeric(1)), COLS))
   active_cols <- reactive({ w <- weights(); names(w)[w > 0] })
@@ -338,6 +360,28 @@ server <- function(input, output, session) {
   scored <- reactive({
     compute_index(prepared(), weights(), DIRS, beta = beta_optima()) %>%
       filter(!is.na(score)) %>% arrange(desc(score)) %>% mutate(rank = row_number())
+  })
+
+  # Sidebar: live distribution of the current index scores (reflects weights,
+  # filters and clamping). Always visible across all sections.
+  output$side_hist <- renderPlot({
+    s <- scored()
+    if (nrow(s) == 0)
+      return(ggplot() + theme_void() +
+               annotate("text", x = 0, y = 0, size = 4, colour = PAQ$caption,
+                        label = "Nastavte alespoň\njednu váhu > 0"))
+    ggplot(s, aes(score)) +
+      geom_histogram(bins = 25, fill = PAQ$green, colour = "white", linewidth = 0.2) +
+      geom_vline(xintercept = median(s$score), linetype = "dashed", colour = PAQ$merlot) +
+      coord_cartesian(xlim = c(0, 100)) +
+      labs(x = "Skóre indexu (0–100)", y = NULL) +
+      theme_paq_app(11)
+  })
+  output$side_hist_cap <- renderText({
+    s <- scored()
+    if (nrow(s) == 0) return("Bez aktivních komponent.")
+    sprintf("%s obcí · medián %.1f (přerušovaná čára)",
+            format(nrow(s), big.mark = " "), median(s$score))
   })
 
   output$clamp_cost_czk <- renderText({
